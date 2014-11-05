@@ -1,6 +1,6 @@
 {
   "name": "plugd",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "flux pattern based framework",
   "main": "./plugd.js",
   "scripts": {

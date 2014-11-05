@@ -170,10 +170,17 @@ var Adaptor = exports.Adaptor = stacks.Class({
   },
   delegate: function (t) {
       if(!Packets.isPacket(t)) return;
-      return this.adaptive(t,this);
+      return this.adaptive.call(this,t);
   },
   send: function (t) {
     this.jobResult.emit(t);
+  },
+  sendReply: function(id){
+    var self = this,s = ShellPacket.Reply(id);
+    s.once(function(f){
+      self.send(f);
+    });
+    return s;
   },
   hasPlug: function (t) {
       return this.plugs.indexOf(t) != -1;
@@ -218,7 +225,7 @@ var PlugStore = exports.PlugStore = FunctionStore.extends({
   init: function(id){
     this.$super(id,function(fn,sid){
       var plug = Plug.make(sid);
-      fn(plug);
+      fn.call(plug);
       return plug;
     });
   }
