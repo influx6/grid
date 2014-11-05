@@ -8,9 +8,9 @@ var tasks = 0x24677B434A323;
 var replies = 0x1874F43FF45;
 var packets = 0x1874F43FF45;
 
-var PacketSchema = stacks.Schema({
+var PacketSchema = stacks.Schema({},{
     message: 'string',
-    stream: 'selectStream',
+    stream: 'StreamSelect',
     tag: 'number',
     cid: packets,
   },{
@@ -27,8 +27,8 @@ var PacketSchema = stacks.Schema({
       maxWrite: 1,
     },
   },{
-  selectStream: function(f,fn){
-    return fn(stacks.SelectStream.isType(f));
+  StreamSelect: function(f,fn){
+    return fn(stacks.StreamSelect.isType(f));
   }
 });
 
@@ -36,7 +36,8 @@ var Packets = exports.Packets = function(id,tag){
   var shell = PacketSchema.extends({});
   shell.tag = tag;
   shell.message = id;
-  shell.stream = stacks.SelectStream();
+  shell.stream = stacks.StreamSelect.make();
+  shell.emit = stacks.funcs.bind(shell.stream.emit,shell.stream);
   return shell;
 };
 
@@ -46,19 +47,19 @@ Packets.isPacket = function(p){
 };
 
 Packets.isTask = function(p){
- if(Packet.isPacket(p) && p.tag == tasks) return true;
+ if(Packets.isPacket(p) && p.tag == tasks) return true;
  return false;
 };
 
 Packets.isReply = function(p){
- if(Packet.isPacket(p) && p.tag == replies) return true;
+ if(Packets.isPacket(p) && p.tag == replies) return true;
  return false;
 };
 
 Packets.Task = function(id){
   var bs = Packets(id,tasks);
   bs.stream.mutts.add(function(f,next,end){
-    if(!valids.exists(f['uuid']) && !valids.exists(f['data'])) return;
+    if(!stacks.valids.exists(f['uuid']) && !stacks.valids.exists(f['data'])) return;
     return next();
   });
   return bs;
@@ -72,39 +73,46 @@ var ShellPacket = exports.ShellPacket = function(pack){
   if(!Packets.isPacket(pack)) return;
   return stacks.UtilShell(function(f){
     pack.stream.emit(f);
+  },function(d){
+    pack.stream.lock();
+    d.distribute(pack);
   });
 };
 
-ShellPacket.Task = function(p){
- if(!Packets.isTask(p)) returnl
+ShellPacket.withTask = function(p){
+ if(!Packets.isTask(p)) return;
+ return ShellPacket(Pac);
+};
+
+ShellPacket.withReply = function(p){
+ if(!Packets.isReply(p)) return;
  return ShellPacket(p);
 };
 
-ShellPacket.Reply = function(p){
- if(!Packets.isReply(p)) returnl
- return ShellPacket(p);
+ShellPacket.Task = function(id){
+ return ShellPacket(Packets.Task(id));
 };
 
-var Channel = exports.Channel = stacks.Stream.extends({
-  init: function(){
-    this.$super();
-  }
-});
+ShellPacket.Reply = function(id){
+ return ShellPacket(Packets.Reply(id));
+};
+
+var Channel = exports.Channel = stacks.Stream.extends({});
 
 var SelectedChannel = exports.SelectedChannel = Channel.extends({
   init: function(id,picker){
     this.$super();
     this.contract = stacks.Contract(id,picker);
-    this.contract.onPass(stacks.Funcs.bind(this.mutts.emit,this.mutts));
+    this.contract.onPass(stacks.funcs.bind(this.mutts.emit,this.mutts));
   },
-  emit: function(){
+  emit: function(d){
     this.contract.interogate(d);
   }
 });
 
 var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
   init: function(id,picker){
-    this.$super(id,picker);
+    this.$super(id,picker || MessagePicker);
     this.mutts.add(function(f,next,end){
       if(!Packets.isTask(f)) return;
       return next();
@@ -113,8 +121,8 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
 });
 
 var ReplyChannel = exports.ReplyChannel = SelectedChannel.extends({
-  init: function(){
-    this.$super(id,picker);
+  init: function(id,picker){
+    this.$super(id,picker || MessagePicker);
     this.mutts.add(function(f,next,end){
       if(!Packets.isReply(f)) return;
       return next();
