@@ -7,14 +7,14 @@ var patchapts = plug.AdaptorStore.make('patches.adaptors');
 patchapts.add('append',function(p){
   p.stream.$.all().on(this.$closure(function(d){
     var id = this.sendReply(d.uuid);
-    id.pack([d.data,stacks.Util.guid()].join('-'));
+    id.push([d.data,stacks.Util.guid()].join('-'));
     id.ok();
   }));
 });
 
 patchapts.add('console',function(p){
   p.stream.$.all().on(this.$closure(function(d){
-    console.log(d);
+    stacks.tags.tag('console-out',d);
   }));
 });
 
@@ -28,6 +28,16 @@ patch.add('display',function(p){
   patchapts.Q('console').attachPlug(this);
 });
 
-// stacks.Jazz('plate specification', function (_){
-//
-// });
+stacks.Jazz('plate specification', function (_){
+
+  var ad = patch.Q('append_digit');
+  var prt = patch.Q('display');
+  var plate = plug.Plate.make();
+
+  plug.PlugPoint(function(p){
+    console.log('mutating relies to tasks');
+  }).bind(ad,prt);
+
+  ad.
+
+});

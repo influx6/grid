@@ -71,7 +71,7 @@ Packets.Reply = function(id){
 
 var ShellPacket = exports.ShellPacket = function(pack){
   if(!Packets.isPacket(pack)) return;
-  return stacks.UtilShell(function(f){
+  return stacks.UntilShell(function(f){
     pack.stream.emit(f);
   },function(d){
     pack.stream.lock();
@@ -132,7 +132,7 @@ var ReplyChannel = exports.ReplyChannel = SelectedChannel.extends({
 
 var Adaptor = exports.Adaptor = stacks.Class({
   init: function(fc){
-    core.Asserted(core.valids.isFunction(fc),"argument must be a function!");
+    stacks.Asserted(stacks.valids.isFunction(fc),"argument must be a function!");
     var self = this;
     this.nextAdapters = {};
     this.plugs = new Array();
@@ -160,7 +160,7 @@ var Adaptor = exports.Adaptor = stacks.Class({
   attachPlug: function (t) {
     if(this.hasPlug(t) || !t.dispatch) return null;
     this.plugs.push(t);
-    this.listen(funcs.bind(t.dispatch,t));
+    this.on(funcs.bind(t.dispatch,t));
   },
   detachPlug: function (t) {
     if (!this.hasPlug(t) || !t.dispatch) return null;
@@ -202,11 +202,11 @@ var Adaptor = exports.Adaptor = stacks.Class({
 var FunctionStore = exports.FunctionStore = stacks.Class({
   init: function(id,generator){
     this.id = id || (stacks.util.guid()+'- store');
-    this.registry = stacks.as.MapDecorator({});
+    this.registry = stacks.MapDecorator({});
     this.generator = generator;
   },
   add: function(sid,fn){
-    return this.registry.add(sid,fc);
+    return this.registry.add(sid,fn);
   },
   remove: function(sid,fn){
     this.registry.remove(sid);
@@ -235,7 +235,6 @@ var AdaptorStore = exports.AdaptorStore = FunctionStore.extends({
   init: function(id){
     this.$super(id,function(fn,sid){
       var apt = Adaptor.make(fn);
-      fn(apt);
       return apt;
     });
   }
@@ -292,7 +291,7 @@ var AdapterWorkQueue = exports.AdapterWorkQueue = (function () {
 var PSMeta = { task: true, reply: true};
 var PackStream = exports.PackStream = stacks.Class({
   init: function(id,picker,mets){
-    var meta = core.Util.extends({},PSMeta,mets);
+    var meta = stacks.Util.extends({},PSMeta,mets);
     this.packets = Channel.make();
     if(meta.task){
       this.tasks = TaskChannel.make(id,picker);
@@ -332,7 +331,7 @@ var PackStream = exports.PackStream = stacks.Class({
 
 var Plug = exports.Plug = stacks.Class({
   init: function(id){
-    structs.Asserted(valids.isString(id),"first argument must be a string");
+    structs.Asserted(stacks.valids.isString(id),"first argument must be a string");
     this.channels = PackStream.make(id,MessagePicker);
     this.id = id;
   },
@@ -345,58 +344,123 @@ var Plug = exports.Plug = stacks.Class({
   dispatch: function (t) {
     this.channels.emit(t);
   },
+  dispatchTask:  function (id) {
+    structs.Asserted(valids.exists(id),"id is required (id)");
+    var self = this, mesg = ShellPacket.Task(id);
+    mesg.once(function(){
+      self.dispatch(mesg);
+    });
+    return mesg;
+  },
+  dispatchReply:  function (id) {
+    structs.Asserted(valids.exists(id),"id is required (id)");
+    var self = this, mesg = ShellPacket.Reply(id);
+    mesg.once(function(){
+      self.dispatch(mesg);
+    });
+    return mesg;
+  },
 });
+
+var PlugPoint = exports.PlugPoint = function(fx){
+  if(!stacks.valids.isFunction(fx)) return;
+  return stacks.MutateBy(function(fn,src,dests){
+    if(!Plug.isType(src)) return;
+
+    var stm = stacks.Stream.make();
+    stm.transform(fn);
+    src.channels.streamReplies(stm);
+    stacks.enums.each(dests,function(e,i,o,ff){
+      if(!Plug.isType(e)) return ff(null);
+      stm.stream(e.channels.tasks);
+      return ff(null);
+    });
+    this.close = function(){
+      return stm.close();
+    };
+
+    this.lock();
+  },fx);
+};
+
+var PlatePoint = exports.PlatePoint = function(fx){
+  if(!stacks.valids.isFunction(fx)) return;
+  return stacks.MutateBy(function(fn,src,dests){
+    if(!Plate.isType(src)) return;
+
+    var stm = stacks.Stream.make();
+    stm.transform(fn);
+    src.channels.stream(stm);
+    stacks.enums.each(dests,function(e,i,o,ff){
+      if(!Plate.isType(e)) return ff(null);
+      stm.stream(e.channels.packets);
+      return ff(null);
+    });
+    this.close = function(){
+      return stm.close();
+    };
+    this.lock();
+  },fx);
+};
 
 var Plate = exports.Plate = structs.Class({
   init: function(id) {
-    this.channels = PacketStream.make(core.funcs.always(true));
+    this.channels = PackStream.make(stacks.funcs.always(true));
     // this.channels = Channel.make();
   },
   plug: function(id){
-    var pl =  new Plug(id);
+    var pl =  Plug.make(id);
     pl.bindPlate(this);
     return pl;
   },
   plugQueue: function(){
     return new PlugQueue(this);
   },
+  dispatch: function (t) {
+    this.channels.emit(t);
+  },
+  dispatchReply:  function (id) {
+    structs.Asserted(stacks.valids.exists(id),"id is required (id)");
+    var self = this, mesg = ShellPacket.Reply(id);
+    mesg.once(function(){
+      self.dispatch(mesg);
+    });
+    return mesg;
+  },
   dispatchTask:  function (id,uuid,data) {
-    structs.Asserted(valids.exists(id),"id is required (id)");
+    structs.Asserted(stacks.valids.exists(id),"id is required (id)");
     var self = this, mesg = ShellPacket.Task(id);
     mesg.once(function(){
       self.dispatch(mesg);
     });
-    if(valids.exists(data) && valids.exists(uuid)){
-      mesg.pack({'uuid': uuid, data: data});
+    if(stacks.valids.exists(data) && stacks.valids.exists(uuid)){
+      mesg.push({'uuid': uuid, data: data});
     }
     return mesg;
-  },
-  task: function (id, uuid, data) {
-    var task = this.watch(uuid);
-    task.task = this.disptachTask(id,uuid,data);
-    return task;
   },
   watch: function(uuid){
     var channel = new channels.SelectedChannel(uuid, MessagePicker);
     this.on(funcs.bind(channel.emit,channel));
     return channel;
   },
-  dispatch: function (t) {
-    this.channels.emit(t);
+  task: function (id, uuid, data) {
+    var task = this.watch(uuid);
+    task.task = this.disptachTask(id,uuid,data);
+    return task;
   },
 });
 
 var PlugQueue = exports.PlugQueue = stacks.Class({
   init: function(pl){
-    structs.Asserted(valids.isInstanceOf(pl,Plate),"argument must be an instance of plate");
+    stacks.Asserted(stacks.valids.isInstanceOf(pl,Plate),"argument must be an instance of plate");
     this.plate = pl;
     this.typeList = {};
-    this.wq = stacks.structs.WorkQueue();
-    this.active = stacks.structs.Switch();
+    this.wq = stacks.WorkQueue();
+    this.active = stacks.Switch();
 
-    this.onDone = stacks.Funcs.bind(this.wq.done.add,this.wq.done);
-    this.onDoneOnce = stacks.Funcs.bind(this.wq.done.addOnce,this.wq.done);
-    this.offDone = stacks.Funcs.bind(this.wq.done.add,this.wq.done);
+    this.onDone = stacks.funcs.bind(this.wq.done.add,this.wq.done);
+    this.onDoneOnce = stacks.funcs.bind(this.wq.done.addOnce,this.wq.done);
+    this.offDone = stacks.funcs.bind(this.wq.done.add,this.wq.done);
   },
   peek: function(fn){
     this.wq.queue(fn);
@@ -414,7 +478,7 @@ var PlugQueue = exports.PlugQueue = stacks.Class({
       'uuid': guid,
       'index': this.typeList.length,
       'watch':chan,
-      'fn': stacks.Funcs.bind(function(f){
+      'fn': stacks.funcs.bind(function(f){
         return this.plate.dispatchMessage(name,guid,f);
       },self)
     });
