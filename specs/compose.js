@@ -4,12 +4,16 @@ var expects = stacks.Expects;
 
 stacks.Jazz('plate specification', function (_){
 
+  var composable = plug.Composable.make('example');
+  composable.registerPlug('append',function(){});
+  composable.registerPlugPoint('appender',function(p,sm){ console.log('making appender'); });
+  composable.registerPlatePoint('appender',function(p,sm){ console.log('making plate appender'); });
+
   var composer = plug.Composer.make('dust');
+  composable.register(composer);
   var test = composer.useCompose('test');
 
-  composer.plugs.register('append',function(){});
-  composer.plugPoints.register('appender',function(p,sm){ console.log('making appender'); });
-  composer.platePoints.register('appender',function(p,sm){ console.log('making plate appender'); });
+
 
   _('can i create a composer',function($){
     $.sync(function(f,g){
@@ -51,7 +55,7 @@ stacks.Jazz('plate specification', function (_){
       expects.truthy(plug.Plug.isType(f));
       expects.truthy(plug.Plug.isInstance(f));
     });
-    $.for(test.usePlug('append','rack').plug('rack'));
+    $.for(test.usePlug('example.append','rack').plug('rack'));
   });
 
   _('can i create a plugpoint from a compose',function($){
@@ -59,7 +63,7 @@ stacks.Jazz('plate specification', function (_){
       expects.truthy(f);
       expects.isFunction(f);
     });
-    $.for(test.usePoint('appender','rack').point('rack'));
+    $.for(test.usePoint('example.appender','rack').point('rack'));
   });
 
   _('can i create a platepoint from a composer',function($){
@@ -67,6 +71,6 @@ stacks.Jazz('plate specification', function (_){
       expects.truthy(f);
       expects.isFunction(f);
     });
-    $.for(composer.usePoint('appender','rack').point('rack'));
+    $.for(composer.usePoint('example.appender','rack').point('rack'));
   });
 });

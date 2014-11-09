@@ -686,21 +686,33 @@ var Composable = exports.Composable = stacks.Class({
     },
     register: function(composer){
       if(!Composer.isInstance(composer)) return;
-      this.plugs.cascade(this.$closure(function(e,i){
+      this.plugs.each(this.$closure(function(e,i){
         var nsd = [this.ns,i].join('.');
         composer.plugs.register(nsd,e);
       }));
-      this.plugPoints.cascade(this.$closure(function(e,i){
+      this.plugPoints.each(this.$closure(function(e,i){
         var nsd = [this.ns,i].join('.');
         composer.plugPoints.register(nsd,e);
       }));
-      this.platePoints.cascade(this.$closure(function(e,i){
+      this.platePoints.each(this.$closure(function(e,i){
         var nsd = [this.ns,i].join('.');
         composer.platePoints.register(nsd,e);
       }));
-      this.adaptors.cascade(this.$closure(function(e,i){
+      this.adaptors.each(this.$closure(function(e,i){
         var nsd = [this.ns,i].join('.');
         composer.adaptors.register(nsd,e);
       }));
-    }
+    },
+    registerPlug: function(){
+      this.plugs.register.apply(this.plugs,arguments);
+    },
+    registerPlugPoint: function(){
+      this.plugPoints.register.apply(this.plugPoints,arguments);
+    },
+    registerPlatePoint: function(){
+      this.platePoints.register.apply(this.platePoints,arguments);
+    },
+    registerAdaptor: function(){
+      this.adaptors.register.apply(this.adaptors,arguments);
+    },
 });
