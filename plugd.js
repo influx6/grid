@@ -674,3 +674,33 @@ var Composer = exports.Composer = stacks.Class({
     return this.points.Q(gid);
   },
 });
+
+var Composable = exports.Composable = stacks.Class({
+    init: function(ns){
+      stacks.Asserted(stacks.valids.isString(ns),'first argument supplied must be a string');
+      this.ns = ns;
+      this.plugs = PlugStore.make(ns+":plugs");
+      this.plugPoints = PlugPointStore.make(ns+":plugPoints");
+      this.platePoints = PlatePointStore.make(ns+":platePoints");
+      this.adaptors = AdaptorStore.make(ns+":adaptors");
+    },
+    register: function(composer){
+      if(!Composer.isInstance(composer)) return;
+      this.plugs.cascade(this.$closure(function(e,i){
+        var nsd = [this.ns,i].join('.');
+        composer.plugs.register(nsd,e);
+      }));
+      this.plugPoints.cascade(this.$closure(function(e,i){
+        var nsd = [this.ns,i].join('.');
+        composer.plugPoints.register(nsd,e);
+      }));
+      this.platePoints.cascade(this.$closure(function(e,i){
+        var nsd = [this.ns,i].join('.');
+        composer.platePoints.register(nsd,e);
+      }));
+      this.adaptors.cascade(this.$closure(function(e,i){
+        var nsd = [this.ns,i].join('.');
+        composer.adaptors.register(nsd,e);
+      }));
+    }
+});
