@@ -6,24 +6,18 @@ stacks.Jazz('plate specification', function (_){
 
   var composable = plug.Composable.make('example');
   composable.registerPlug('append',function(){});
-  composable.registerPlugPoint('appender',function(p,sm){ console.log('making appender'); });
-  composable.registerPlatePoint('appender',function(p,sm){ console.log('making plate appender'); });
 
   var composer = plug.Composer.make('dust');
   composable.register(composer);
-  var test = composer.useCompose('test');
-
-
+  var test = composer.use('test').get('test');
 
   _('can i create a composer',function($){
     $.sync(function(f,g){
       expects.truthy(f);
       expects.truthy(plug.Composer.isType(f));
       expects.truthy(plug.Composer.isInstance(f));
-      expects.isFunction(f.compose);
-      expects.isFunction(f.point);
-      expects.isFunction(f.useCompose);
-      expects.isFunction(f.usePoint);
+      expects.isFunction(f.get);
+      expects.isFunction(f.use);
     });
     $.for(composer);
   });
@@ -46,7 +40,7 @@ stacks.Jazz('plate specification', function (_){
       expects.truthy(f.plates);
       expects.truthy(plug.Plate.isInstance(f.plates));
     });
-    $.for(composer.compose('test'));
+    $.for(composer.get('test'));
   });
 
   _('can i create a plug from a compose',function($){
@@ -55,22 +49,7 @@ stacks.Jazz('plate specification', function (_){
       expects.truthy(plug.Plug.isType(f));
       expects.truthy(plug.Plug.isInstance(f));
     });
-    $.for(test.usePlug('example.append','rack').plug('rack'));
+    $.for(test.use('example.append','append','rack').get('rack'));
   });
 
-  _('can i create a plugpoint from a compose',function($){
-    $.sync(function(f,g){
-      expects.truthy(f);
-      expects.isFunction(f);
-    });
-    $.for(test.usePoint('example.appender','rack').point('rack'));
-  });
-
-  _('can i create a platepoint from a composer',function($){
-    $.sync(function(f,g){
-      expects.truthy(f);
-      expects.isFunction(f);
-    });
-    $.for(composer.usePoint('example.appender','rack').point('rack'));
-  });
 });
