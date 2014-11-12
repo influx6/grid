@@ -64,7 +64,7 @@ Packets.isReply = function(p){
 Packets.Task = function(id){
   var bs = Packets(id,tasks);
   bs.stream.mutts.add(function(f,next,end){
-    if(!stacks.valids.exists(f['uuid']) && !stacks.valids.exists(f['data'])) return;
+    if(!stacks.valids.exists(f['uuid'])) return;
     return next();
   });
   return bs;
@@ -167,7 +167,7 @@ var Adaptor = exports.Adaptor = stacks.Class({
   attachPlug: function(t){
     if(!Plug.isInstance(t)) return this;
     t.channels.tasks.on(this.delegate);
-    this.on(t.$scoped('dispatch'));
+    this.on(t.dispatch);
     this.plugs.push(t);
     return this;
   },
@@ -175,7 +175,7 @@ var Adaptor = exports.Adaptor = stacks.Class({
     if(!Plug.isInstance(t) || !this.hasPlug(t)) return this;
     this.plugs[this.plugs.indexOf(t)] = null;
     t.channels.tasks.off(this.delegate);
-    this.off(t.$scoped('dispatch'));
+    this.off(t.dispatch);
     stacks.Util.normalizeArray(this.plugs);
     return this;
   },
@@ -320,18 +320,23 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.points = [];
     this.id = id;
     this.gid = gid;
+    this.configs.add('contract',id);
     this.configs.add('id',id);
     this.configs.add('gid',gid);
 
     var plate = null,bindfs,bindns;
 
+    this.$secure('dispatch',function (t) {
+      this.channels.emit(t);
+    });
+
     this.isAttached = this.$closure(function(){
       return plate != null;
     });
 
-    this.attachPlate = this.$closure(function(plate){
-      if(this.isAttached() || !Plate.isInstance(plate)) return;
-      plate = plate;
+    this.attachPlate = this.$closure(function(pl){
+      if(this.isAttached() || !Plate.isInstance(pl)) return;
+      plate = pl;
       bindfs = this.channels.replies.stream(plate.channels.packets);
       bindns = plate.channels.tasks.stream(this.channels.packets);
     });
@@ -358,18 +363,15 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     delete this.points[ind];
     stacks.Util.normalizeArray(this.points);
   },
-  dispatch: function (t) {
-    this.channels.emit(t);
-  },
-  dispatchTask:  function (id) {
-    stacks.Asserted(valids.exists(id),"id is required (id)");
+  createTask:  function (id) {
+    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
     var self = this, mesg = ShellPacket.Task(id);
     mesg.once(function(f){
       self.dispatchOut(f);
     });
     return mesg;
   },
-  dispatchReply:  function (id) {
+  createReply:  function (id) {
     stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
     var self = this, mesg = ShellPacket.Reply(id);
     mesg.once(function(f){
@@ -386,6 +388,9 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.channels = PackStream.make({ reply: fx, task: fx });
     this.id = id;
     this.points = [];
+    this.$secure('dispatch',function(f){
+      this.channels.emit(f);
+    });
   },
   attachPoint: function(fn,filter,k){
     var pt = PlatePoint(fn,filter,k)(this);
@@ -406,10 +411,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
   plugQueue: function(){
     return new PlugQueue(this);
   },
-  dispatch: function (t) {
-    this.channels.emit(t);
-  },
-  dispatchReply:  function (id) {
+  createReply:  function (id) {
     stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
     var self = this, mesg = ShellPacket.Reply(id);
     mesg.once(function(f){
@@ -417,7 +419,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     });
     return mesg;
   },
-  dispatchTask:  function (id,uuid,data) {
+  createTask:  function (id,uuid,data) {
     stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
     var self = this, mesg = ShellPacket.Task(id);
     mesg.once(function(f){
@@ -546,7 +548,7 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     });
 
     this.secure('createTask',function(n){
-      var t = ShellPackets.Task(n);
+      var t = ShellPacket.Task(n);
       t.once(function(f){
         stm.emit(f);
       });
@@ -554,7 +556,7 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     });
 
     this.secure('createReply',function(n){
-      var t = ShellPackets.Reply(n);
+      var t = ShellPacket.Reply(n);
       t.once(function(f){
         stm.emit(f);
       });
@@ -590,7 +592,7 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     },contract);
 
     contract.onPass(handle);
-    src.channels.replies.on(contractHandle);
+    src.channels.packets.on(contractHandle);
 
     stacks.enums.each(dests,function(e,i,o,ff){
       if(!Plate.isType(e)) return ff(null);
@@ -600,7 +602,7 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     this.UUID = stacks.Util.guid();
 
     this.secure('createTask',function(n){
-      var t = ShellPackets.Task(n);
+      var t = ShellPacket.Task(n);
       t.once(function(f){
         stm.emit(f);
       });
@@ -608,7 +610,7 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
 
     this.secure('createReply',function(n){
-      var t = ShellPackets.Reply(n);
+      var t = ShellPacket.Reply(n);
       t.once(function(f){
         stm.emit(f);
       });
@@ -616,7 +618,7 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
 
     this.secure('close',function(){
-      src.channels.replies.off(contractHandle);
+      src.channels.packets.off(contractHandle);
       return stm.close();
     });
 
@@ -682,11 +684,11 @@ var Compose = exports.Compose = stacks.Class({
     this.platePoints = stacks.Storage.make();
 
     //added plate bindings
-    this.dispatch =  this.plate.$scoped('dispatch');
-    this.dispatchReply = this.plate.$scoped('dispatchReply');
-    this.dispatchTask = this.plate.$scoped('dispatchTask');
-    this.watch = this.plate.$scoped('watch');
-    this.task = this.plate.$scoped('task');
+    this.dispatch =  this.plate.dispatch;
+    this.createReply = this.plate.$closure(this.plate.createReply);
+    this.createTask = this.plate.$closure(this.plate.createTask);
+    this.watch = this.plate.$closure(this.plate.watch);
+    this.task = this.plate.$closure(this.plate.task);
   },
   use: function(id,fn,gid){
     stacks.Asserted(stacks.valids.isString(id),'first argument is the store "id" of the plug');
@@ -701,6 +703,20 @@ var Compose = exports.Compose = stacks.Class({
   get: function(gid){
     stacks.Asserted(stacks.valids.isString(gid),'argument is the unique alias for this plug');
     return this.plugs.Q(gid);
+  },
+  createTask: function(id){
+    var self = this,t = ShellPacket.Task(id);
+    t.once(function(f){
+      self.plate.dispatch(f);
+    });
+    return t;
+  },
+  createReply: function(id){
+    var self = this,t = ShellPacket.Reply(id);
+    t.once(function(f){
+      self.plate.dispatch(f);
+    });
+    return t;
   },
   queue: function(){
     return this.plate.plugQueue();
@@ -726,7 +742,7 @@ var Compose = exports.Compose = stacks.Class({
     return ptt;
   },
   attachPlugPoint: function(pid,gid,filter,alias){
-    if(!this.plugs.has(pid) || this.plugPoints.has(alias)) return;
+    if(!this.plugs.has(pid) || this.plugPoints.has(alias)) return this.plugPoints.Q(alias);
     var pl = this.get(pid);
     var pt = this.defPlugPoint(gid);
     if(!stacks.valids.isFunction(pt)) return;
@@ -750,11 +766,16 @@ var Composer = exports.Composer = stacks.Class({
     this.adaptors = AdaptorStore.make();
     this.plugPoints = Store.make('plugPoints',stacks.funcs.identity);
     this.platePoints = Store.make('platePoints',stacks.funcs.identity);
+    this.composePrints = Store.make('Composers',stacks.funcs.identity);
   },
-  use: function(id){
+  use: function(id,cip){
     if(this.composers.has(id)) return this;
     var com = Compose.make(id,this.plugs,this.adaptors,this.plugPoints,this.platePoints);
     this.composers.add(id || com.GUUID,com);
+    if(this.composePrints.has(cip)){
+      var cid = this.composePrints.Q(cip);
+      if(stacks.valids.isFunction(cid)) cid.call(com);
+    }
     return this;
   },
   get: function(gid){
@@ -779,6 +800,7 @@ var Composable = exports.Composable = stacks.Class({
       this.adaptors = AdaptorStore.make(ns+":adaptors");
       this.plugPoints = Store.make(ns+":plugPoints",stacks.funcs.identity);
       this.platePoints = Store.make(ns+":platePoints",stacks.funcs.identity);
+      this.composePrints = Store.make(ns+":Composers",stacks.funcs.identity);
     },
     createComposer: function(id,fn){
       var ck =  this.register(Composer.make(id));
@@ -803,6 +825,10 @@ var Composable = exports.Composable = stacks.Class({
         var nsd = [this.ns,i].join('.');
         composer.adaptors.register(nsd,e);
       }));
+      this.composePrints.each(this.$closure(function(e,i){
+        var nsd = [this.ns,i].join('.');
+        composer.composePrints.register(nsd,e);
+      }));
       return composer;
     },
     registerPlug: function(){
@@ -816,5 +842,8 @@ var Composable = exports.Composable = stacks.Class({
     },
     registerAdaptor: function(){
       this.adaptors.register.apply(this.adaptors,arguments);
+    },
+    registerCompose: function(){
+      this.composePrints.register.apply(this.composePrints,arguments);
     },
 });

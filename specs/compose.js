@@ -37,8 +37,8 @@ stacks.Jazz('plate specification', function (_){
       expects.truthy(f.id == 'test');
       expects.truthy(plug.Compose.isType(f));
       expects.truthy(plug.Compose.isInstance(f));
-      expects.truthy(f.plates);
-      expects.truthy(plug.Plate.isInstance(f.plates));
+      expects.truthy(f.plate);
+      expects.truthy(plug.Plate.isInstance(f.plate));
     });
     $.for(composer.get('test'));
   });
