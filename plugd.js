@@ -317,7 +317,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.$super();
     stacks.Asserted(stacks.valids.isString(id),"first argument must be a string");
     this.channels = PackStream.make({task: id, reply: stacks.funcs.always(true)});
-    this.points = [];
+    this.points = Store.make('plugPoints',stacks.funcs.identity);
     this.id = id;
     this.gid = gid;
     this.configs.add('contract',id);
@@ -352,16 +352,31 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       plate.dispatch(f);
     });
   },
-  attachPoint: function(fn,filter,k){
+  point: function(alias){
+    return this.points.Q(alias);
+  },
+  attachPoint: function(fn,filter,alias,k){
+    if(alias && this.points.has(alias)) return;
     var pt = PlugPoint(fn,filter,k)(this);
-    this.points.push(pt);
+    if(stacks.valids.notExists(alias)) stacks.Util.pusher(this.points.registry,pt);
+    else this.points.add(alias,pt);
     return pt;
   },
-  detachPoint: function(pt){
-    var ind = this.points.indexOf(pt);
-    if(ind == -1) return;
-    delete this.points[ind];
-    stacks.Util.normalizeArray(this.points);
+  detachPoint: function(item){
+    if(stacks.valids.isString(item) && this.points.has(item)){
+      var pt = this.points.Q(item);
+      if(stacks.valids.isFunction(pt.close)) pt.close();
+      return pt;
+    };
+    if(stacks.valids.isObject(item)){
+      this.points.each(function(f,i,o,fn){
+        if(f == item){
+          if(stacks.valids.isFunction(f.close)) f.close();
+          return fn(true);
+        }
+      });
+      return item;
+    }
   },
   createTask:  function (id) {
     stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
