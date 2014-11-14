@@ -399,24 +399,44 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 var Plate = exports.Plate = stacks.Configurable.extends({
   init: function(id) {
     this.$super();
+    this.id = id;
     var fx = stacks.funcs.always(true);
     this.channels = PackStream.make({ reply: fx, task: fx });
-    this.id = id;
-    this.points = [];
+    this.points = Store.make('platePoints',stacks.funcs.identity);
+
+    this.configs.add('contract',id);
+    this.configs.add('id',id);
+    this.configs.add('gid',gid);
+
     this.$secure('dispatch',function(f){
       this.channels.emit(f);
     });
   },
-  attachPoint: function(fn,filter,k){
+  point: function(alias){
+    return this.points.Q(alias);
+  },
+  attachPoint: function(fn,filter,alias,k){
+    if(alias && this.points.has(alias)) return;
     var pt = PlatePoint(fn,filter,k)(this);
-    this.points.push(pt);
+    if(stacks.valids.notExists(alias)) stacks.Util.pusher(this.points.registry,pt);
+    else this.points.add(alias,pt);
     return pt;
   },
-  detachPoint: function(pt){
-    var ind = this.points.indexOf(pt);
-    if(ind == -1) return;
-    delete this.points[ind];
-    stacks.Util.normalizeArray(this.points);
+  detachPoint: function(item){
+    if(stacks.valids.isString(item) && this.points.has(item)){
+      var pt = this.points.Q(item);
+      if(stacks.valids.isFunction(pt.close)) pt.close();
+      return pt;
+    };
+    if(stacks.valids.isObject(item)){
+      this.points.each(function(f,i,o,fn){
+        if(f == item){
+          if(stacks.valids.isFunction(f.close)) f.close();
+          return fn(true);
+        }
+      });
+      return item;
+    }
   },
   plug: function(id){
     var pl =  Plug.make(id);
