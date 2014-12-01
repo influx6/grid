@@ -318,6 +318,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     stacks.Asserted(stacks.valids.isString(id),"first argument must be a string");
     this.channels = PackStream.make({task: id, reply: stacks.funcs.always(true)});
     this.points = Store.make('plugPoints',stacks.funcs.identity);
+    this.internalChannels = Store.make('plugInternalChannels',stacks.funcs.identity);
     this.id = id;
     this.gid = gid;
     this.configs.add('contract',id);
@@ -351,6 +352,30 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       if(!this.isAttached()) return;
       plate.dispatch(f);
     });
+  },
+  useInternalTask: function(id,tag,picker){
+    stacks.Asserted(arguments.length <= 0,'please supply the id, tag for the channel');
+    stacks.Asserted(arguments.length == 1 && !stacks.valids.isString(id),'key for the channel must be a string')
+    if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
+    stacks.Asserted(!this.internalChannels.has(id),'id "'+id+'" is already in use');
+    var tk = TaskChannel.make(tag,picker);
+    this.internalChannels.add(tk);
+    this.channels.stream(tk);
+    return tk;
+  },
+  useInternalReply: function(id,tag,picker){
+    stacks.Asserted(arguments.length <= 0,'please supply the id, tag for the channel');
+    stacks.Asserted(arguments.length == 1 && !stacks.valids.isString(id),'key for the channel must be a string')
+    if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
+    stacks.Asserted(!this.internalChannels.has(id),'id "'+id+'" is already in use');
+    var tk = ReplyChannel.make(tag,picker);
+    this.internalChannels.add(tk);
+    this.channels.stream(tk);
+    return tk;
+  },
+  getInternal: function(id){
+    if(!this.internalChannels.has(id)) return;
+    return this.internalChannels.Q(id);
   },
   point: function(alias){
     return this.points.Q(alias);
@@ -406,7 +431,6 @@ var Plate = exports.Plate = stacks.Configurable.extends({
 
     this.configs.add('contract',id);
     this.configs.add('id',id);
-    this.configs.add('gid',gid);
 
     this.$secure('dispatch',function(f){
       this.channels.emit(f);
