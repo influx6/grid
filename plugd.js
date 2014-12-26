@@ -613,9 +613,9 @@ var Compose = exports.Compose = stacks.Configurable.extends({
     // this.rack = rack;
     this.plate = Plate.make(id);
     this.plugs = stacks.Storage.make();
-    this.adapters = stacks.Storage.make();
-    this.plugPoints = stacks.Storage.make();
-    this.platePoints = stacks.Storage.make();
+    // this.adapters = stacks.Storage.make();
+    // this.plugPoints = stacks.Storage.make();
+    // this.platePoints = stacks.Storage.make();
 
     //added plate bindings
     this.dispatch =  this.plate.dispatch;
@@ -643,32 +643,6 @@ var Compose = exports.Compose = stacks.Configurable.extends({
   },
   queue: function(){
     return this.plate.plugQueue();
-  },
-  getPlugPoint: function(id){
-    return this.plugPoints.Q(id);
-  },
-  getAdapter: function(id){
-    return this.adapters.Q(id);
-  },
-  getPlatePoint: function(id){
-    return this.platePoints.Q(id);
-  },
-  attachPlatePoint: function(id,filter,alias){
-    if(this.platePoints.has(alias)) return;
-    var pt = this.defPlatePoint(id);
-    if(!stacks.valids.isFunction(pt)) return;
-    var ptt = this.plate.attachPoint(pt,filter);
-    this.platePoints.add(alias || ptt.UUID,ptt);
-    return ptt;
-  },
-  attachPlugPoint: function(pid,gid,filter,alias){
-    if(!this.plugs.has(pid) || this.plugPoints.has(alias)) return this.plugPoints.Q(alias);
-    var pl = this.get(pid);
-    var pt = this.defPlugPoint(gid);
-    if(!stacks.valids.isFunction(pt)) return;
-    var ptt = pl.attachPoint(pt,filter);
-    this.plugPoints.add(alias || ptt.UUID, ptt);
-    return ptt;
   },
 });
 
@@ -756,18 +730,8 @@ var Network = exports.Network = stacks.Configurable.extends({
 
     if(stacks.valids.isFunction(callable)) callable.call(this);
   },
-  use: function(id,cip){
-    stacks.Asserted(stacks.valids.isString(id),'id must be a string value');
-    if(this.composed.has(id)) return this;
-    var addr = cip ? cip.split('/') : ema, rk = addr[0], fn = addr[1];
-    if(rk && this.rack.has(rk)){
-      var zr = this.rack.ns(rk);
-      if(zr.hasCompose(fn)){
-        var zc = zr.Compose(fn,id,this.rack,this);
-        this.composed.add(id,zc);
-      }
-    }
-    return this;
+  use: function(addr,id){
+    return this.Resource.apply(this,arguments);
   },
   crate: function(f){
     if(stacks.valids.isString(f)) return this.rack.new.apply(this.rack,arguments);
@@ -786,6 +750,12 @@ var Network = exports.Network = stacks.Configurable.extends({
       this.composed.has(comp._nid);
     }
     return this.composed.has(comp);
+  },
+  getResource: function(){
+    this.rack.getResource.apply(this.rack,arguments);
+  },
+  Resource: function(){
+    this.rack.resource.apply(this.rack,arguments);
   }
 });
 
@@ -821,6 +791,36 @@ var RackSpace = exports.RackSpace = stacks.Configurable.extends({
       return this.racks.remove(id);
     }
     return;
+  },
+  resource: function(addr){
+    stacks.Asserted(stacks.valids.isString(addr),'first argument must be a string with format: {rack}/{type}/{id}');
+    var rest = stacks.enums.rest(arguments);
+
+    var paths = addr.split('/');
+    stacks.Asserted(paths.length >= 3,'address for type and id is incorrect {rack}/{type}/id!');
+
+    var tr = stacks.enums.rest(paths), rack = paths[0];
+    stacks.Asserted(tr.length >= 2,'sub-address for type and id is incorrect {type}/{id}!');
+
+    if(!this.has(rack)) return;
+
+    var r = this.ns(rack);
+    return r.resource.apply(r,tr.concat(rest));
+  },
+  getResource: function(addr){
+    stacks.Asserted(stacks.valids.isString(addr),'first argument must be a string with format: {rack}/{type}/{id}');
+    var rest = stacks.enums.rest(arguments);
+
+    var paths = addr.split('/');
+    stacks.Asserted(paths.length >= 3,'address for type and id is incorrect {rack}/{type}/id!');
+
+    var tr = stacks.enums.rest(paths), rack = paths[0];
+    stacks.Asserted(tr.length >= 2,'sub-address for type and id is incorrect {type}/{id}!');
+
+    if(!this.has(rack)) return;
+
+    var r = this.ns(rack);
+    return r.getResource.apply(r,tr.concat(rest));
   }
 });
 
@@ -835,6 +835,66 @@ var Rack = exports.Rack = stacks.Configurable.extends({
     this.plugPoints = Store.make("plugPoints",stacks.funcs.identity);
     this.platePoints = Store.make("platePoints",stacks.funcs.identity);
     this.mutators = Store.make("MutatorStore",stacks.funcs.identity);
+  },
+  resource: function(){
+    var res,
+        type = stacks.enums.first(arguments),
+        name = stacks.enums.second(arguments),
+        rest = stacks.enums.nthRest(arguments,2);
+
+    var args = [name].concat(rest);
+    switch(type){
+      case 'adapters':
+        res = this.Adapter.apply(this,args);
+        break;
+      case 'plugs':
+        res = this.Plug.apply(this,args);
+        break;
+      case 'plugpoint':
+        res = this.PlugPoint.apply(this,args);
+        break;
+      case 'platepoint':
+        res = this.PlatePoint.apply(this,args);
+        break;
+      case 'mutator':
+        res = this.Mutator.apply(this,args);
+        break;
+      case 'compose':
+        res = this.Compose.apply(this,args);
+        break;
+    }
+
+    return res;
+  },
+  getResource: function(){
+    var res,
+        type = stacks.enums.first(arguments),
+        name = stacks.enums.second(arguments),
+        rest = stacks.enums.nthRest(arguments,2);
+
+    var args = [name].concat(rest);
+    switch(type){
+      case 'adapters':
+        res = this.getAdapter.apply(this,args);
+        break;
+      case 'plugs':
+        res = this.getPlug.apply(this,args);
+        break;
+      case 'plugpoint':
+        res = this.getPlugPoint.apply(this,args);
+        break;
+      case 'platepoint':
+        res = this.getPlatePoint.apply(this,args);
+        break;
+      case 'mutator':
+        res = this.getMutator.apply(this,args);
+        break;
+      case 'compose':
+        res = this.getCompose.apply(this,args);
+        break;
+    }
+
+    return res;
   },
   hasCompose: function(id){
     return this.composed.has(id);
@@ -871,6 +931,24 @@ var Rack = exports.Rack = stacks.Configurable.extends({
   },
   Compose: function(id,com){
     return this.composed.Q.apply(this.composed,arguments);
+  },
+  getPlug: function(id){
+    return this.plugs.get.apply(this.plugs,arguments);
+  },
+  getAdapter: function(id){
+    return this.adapters.get.apply(this.plugs,arguments);
+  },
+  getMutator: function(id){
+    return this.mutators.get.apply(this.mutators,arguments);
+  },
+  getPlugPoint: function(id){
+    return this.plugPoint.get.apply(this.plugPoint,arguments);
+  },
+  getPlatePoint: function(id){
+    return this.platePoint.get.apply(this.platePoint,arguments);
+  },
+  getCompose: function(id,com){
+    return this.composed.get.apply(this.composed,arguments);
   },
   registerPlug: function(){
     return this.plugs.register.apply(this.plugs,arguments);

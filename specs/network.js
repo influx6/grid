@@ -19,9 +19,7 @@ stacks.Jazz('network specification', function (_){
   });
 
   var n = plug.Network.make('rack-net',rs,function(){
-
-    this.use('rackup','plato/safe');
-
+    this.Resource('plato/compose/safe','rackup');
   });
 
 
