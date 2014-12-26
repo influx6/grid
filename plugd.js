@@ -91,6 +91,9 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   mutate: function(fn){
     this.mutts.add(fn);
   },
+  unmutate: function(fn){
+    this.mutts.remove(fn);
+  },
 });
 
 var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
@@ -158,10 +161,12 @@ var PackStream = exports.PackStream = stacks.Class({
 });
 
 var Plug = exports.Plug = stacks.Configurable.extends({
-  init: function(id,gid){
+  init: function(id,gid,mapc){
     this.$super();
     stacks.Asserted(stacks.valids.isString(id),"first argument must be a string");
-    this.channels = PackStream.make({task: id, reply: stacks.funcs.always(true)});
+    var fx = stacks.funcs.always(true);
+    this.chaMap = stacks.funcs.extends({ task: id, reply: fx },mapc);
+    this.channels = PackStream.make({task: this.chaMap.task, reply: this.chaMap.reply });
     this.points = Store.make('plugPoints',stacks.funcs.identity);
     this.internalChannels = Store.make('plugInternalChannels',stacks.funcs.identity);
     this.id = id;
@@ -202,25 +207,33 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       plate.dispatch(f);
     });
   },
-  replies: function(){ return this.channels.replies; },
-  tasks: function(){ return this.channels.tasks; },
+  replies: function(f){
+    if(f) return this.getInternal(f);
+    return this.channels.replies;
+  },
+  tasks: function(f){
+    if(f) return this.getInternal(f);
+    return this.channels.tasks;
+  },
   useInternalTask: function(id,tag,picker){
-    stacks.Asserted(arguments.length <= 0,'please supply the id, tag for the channel');
-    stacks.Asserted(arguments.length == 1 && !stacks.valids.isString(id),'key for the channel must be a string')
+    stacks.Asserted(arguments.length  > 0,'please supply the id, tag for the channel');
+    if(arguments.length === 1)
+      stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
     if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
     stacks.Asserted(!this.internalChannels.has(id),'id "'+id+'" is already in use');
     var tk = TaskChannel.make(tag,picker);
-    this.internalChannels.add(tk);
+    this.internalChannels.add(id,tk);
     this.channels.stream(tk);
     return tk;
   },
   useInternalReply: function(id,tag,picker){
-    stacks.Asserted(arguments.length <= 0,'please supply the id, tag for the channel');
-    stacks.Asserted(arguments.length == 1 && !stacks.valids.isString(id),'key for the channel must be a string')
+    stacks.Asserted(arguments.length >  0,'please supply the id, tag for the channel');
+    if(arguments.length === 1)
+      stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
     if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
     stacks.Asserted(!this.internalChannels.has(id),'id "'+id+'" is already in use');
     var tk = ReplyChannel.make(tag,picker);
-    this.internalChannels.add(tk);
+    this.internalChannels.add(id,tk);
     this.channels.stream(tk);
     return tk;
   },
@@ -271,11 +284,12 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 });
 
 var Plate = exports.Plate = stacks.Configurable.extends({
-  init: function(id) {
+  init: function(id,mapc) {
     this.$super();
     this.id = id;
     var fx = stacks.funcs.always(true);
-    this.channels = PackStream.make({ reply: fx, task: fx });
+    this.chaMap = stacks.funcs.extends({ task: fx, reply: fx },mapc);
+    this.channels = PackStream.make({ reply: this.chaMap.reply, task: this.chaMap.task });
     this.points = Store.make('platePoints',stacks.funcs.identity);
 
     this.configs.add('contract',id);
@@ -288,8 +302,14 @@ var Plate = exports.Plate = stacks.Configurable.extends({
   point: function(alias){
     return this.points.Q(alias);
   },
-  replies: function(){ return this.channels.replies; },
-  tasks: function(){ return this.channels.tasks; },
+  replies: function(f){
+    // if(f) return this.getInternal(f);
+    return this.channels.replies;
+  },
+  tasks: function(f){
+    // if(f) return this.getInternal(f);
+    return this.channels.tasks;
+  },
   attachPoint: function(fn,filter,alias,k){
     if(alias && this.points.has(alias)) return;
     var pt = PlatePoint(fn,filter,k)(this);
@@ -553,55 +573,61 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
 var PlugStore = exports.PlugStore = Store.extends({
   init: function(id){
     this.$super(id,function(fn,sid,fx){
-      var plug = Plug.make(fx ? fx : sid,sid);
+      var rest = stacks.enums.rest(arguments);
+      var plug = Plug.make.apply(Plug,rest);
       fn.call(plug);
       return plug;
     });
   }
 });
 
-var AdaptorStore = exports.AdaptorStore = Store.extends({
+var AdapterStore = exports.AdapterStore = Store.extends({
   init: function(id){
-    this.$super(id,function(fn,sid){
-      var apt = Adaptor.make(fn);
-      apt._apt_id = sid;
+    this.$super(id,function(fn,sid,fx){
+      var rest = stacks.enums.rest(arguments);
+      var ad = Adapters.apply(null,rest);
+      fn.call(ad);
+      return ad;
+    });
+  }
+});
+
+var ComposeStore = exports.ComposeStore = Store.extends({
+  init: function(id){
+    this.$super(id,function(fn){
+      var rest = stacks.enums.rest(arguments);
+      var apt = Compose.make.apply(Compose,rest);
+      fn.call(apt);
       return apt;
     });
   }
 })
 
-var Compose = exports.Compose = stacks.Class({
-  init: function(id,plugs,adaptors,pp,pt){
-    stacks.Asserted(stacks.valids.isString(id),'first argument supplied must be a string');
-    stacks.Asserted(PlugStore.isInstance(plugs),'second argument supplied must be a PlugStore instance');
-    stacks.Asserted(AdaptorStore.isInstance(adaptors),'third argument supplied must be a AdaptorStore instance');
-    stacks.Asserted(Store.isInstance(pp),'third argument supplied must be a Storage instance');
-    stacks.Asserted(Store.isInstance(pt),'fourth argument supplied must be a Storage instance');
+var Compose = exports.Compose = stacks.Configurable.extends({
+  init: function(id,rack,net){
+    stacks.Asserted(stacks.valids.isString(id),'id must be a string value');
+    this.$super();
     this.id = id;
+    this.rack = rack;
+    this.network = net;
+    // this.rack = rack;
     this.plate = Plate.make(id);
-    this.plugRegistry = plugs;
-    this.adaptorRegistry = adaptors;
-    this.plugPointRegistry = pp;
-    this.platePointRegistry = pt;
     this.plugs = stacks.Storage.make();
-    this.adaptors = stacks.Storage.make();
+    this.adapters = stacks.Storage.make();
     this.plugPoints = stacks.Storage.make();
     this.platePoints = stacks.Storage.make();
 
     //added plate bindings
     this.dispatch =  this.plate.dispatch;
-    this.createReply = this.plate.$closure(this.plate.createReply);
-    this.createTask = this.plate.$closure(this.plate.createTask);
     this.watch = this.plate.$closure(this.plate.watch);
-    this.task = this.plate.$closure(this.plate.task);
+    this.tasks = this.plate.$closure(this.plate.tasks);
+    this.replies = this.plate.$closure(this.plate.replies);
   },
-  use: function(id,fn,gid){
-    stacks.Asserted(stacks.valids.isString(id),'first argument is the store "id" of the plug');
-    stacks.Asserted(stacks.valids.exists(fn),'second argument is the required for plug task channel filter');
-    if(this.plugRegistry.has(id) && !this.plugs.has(gid)){
-      var pl = this.plugRegistry.Q(id,fn);
-      this.plugs.add(gid || pl.GUUID,pl);
-      pl.attachPlate(this.plate);
+  use: function(plug,gid){
+    stacks.Asserted(Plug.isInstance(plug),'first argument is required to be a plug instance');
+    if(!this.plugs.has(gid || plug.GUUID)){
+      this.plugs.add(gid || plug.GUUID,plug);
+      plug.attachPlate(this.plate);
     }
     return this;
   },
@@ -621,14 +647,11 @@ var Compose = exports.Compose = stacks.Class({
   getPlugPoint: function(id){
     return this.plugPoints.Q(id);
   },
+  getAdapter: function(id){
+    return this.adapters.Q(id);
+  },
   getPlatePoint: function(id){
     return this.platePoints.Q(id);
-  },
-  defPlugPoint: function(id){
-    return this.plugPointRegistry.Q(id);
-  },
-  defPlatePoint: function(id){
-    return this.platePointRegistry.Q(id);
   },
   attachPlatePoint: function(id,filter,alias){
     if(this.platePoints.has(alias)) return;
@@ -647,100 +670,224 @@ var Compose = exports.Compose = stacks.Class({
     this.plugPoints.add(alias || ptt.UUID, ptt);
     return ptt;
   },
- },
- {
-  create: function(id){
-    return Compose.make(id,PlugStore.make(id),AdaptorStore.make(id),stacks.Storage.make(id),stacks.Storage.make(id))
-  }
 });
 
-var Composer = exports.Composer = stacks.Class({
-  init: function(id){
-    stacks.Asserted(stacks.valids.isString(id),'first argument supplied must be a string');
+var Adapters = exports.Adapters = function(){
+  var dist = stacks.Distributors();
+  var mux = stacks.Middleware(_.funcs.bind(_.funcs.bind(dist.distribute,dist)));
+  var fx = _.funcs.bind(mux.emit,mux);
+  var apt = { mux: mux, rack: dist, };
+
+  stacks.funcs.selfReturn(apt,'from',function(){
+    stacks.Asserted(SelectedChannel.isType(chan),'argument must be a channel instance');
+    this.channel = chan;
+    this.channel.on(fx);
+  });
+
+  stacks.funcs.selfReturn(apt,'detach',function(){
+    this.channel.off(fx);
+    this.channel = null;
+  });
+
+  stacks.funcs.selfReturn(apt,'muxate',function(fx){
+    mux.add(fx);
+  });
+
+  stacks.funcs.selfReturn(apt,'out',function(){
+    dist.add(fn);
+  });
+
+  stacks.funcs.selfReturn(apt,'outOnce',function(){
+    dist.addOnce(fn);
+  });
+
+  stacks.funcs.selfReturn(apt,'unOut',function(){
+    dist.remove(fn);
+  });
+
+  return apt;
+};
+
+var Mutators = exports.Mutators = function(fx){
+  var channels = [], freed = [];
+  return {
+    bind: function(chan){
+      if(this.has(chan)) return;
+      chan.mutate(fx);
+      var free = freed.pop();
+      if(free) channels[free] = chan;
+      else channels.push(chan);
+    },
+    unbind: function(chan){
+      if(!this.has(chan)) return;
+      chan.unmutate(fx);
+      var ind = this.index(chan);
+      channels[ind] = null;
+      freed.push(ind);
+    },
+    unbindAll: function(exc){
+      stacks.enums.each(channels,function(e){
+        if(exc && e === exc) return;
+        this.unbind(e);
+      },null,this);
+    },
+    has: function(chan){
+      return this.index(chan) !== -1;
+    },
+    index: function(chan){
+      return channels.indexOf(chan);
+    }
+  }
+};
+
+var ema = [];
+var Network = exports.Network = stacks.Configurable.extends({
+  init: function(id,rack,fn){
+    stacks.Asserted(stacks.valids.isString(id),'an "id" of string type is required ');
+    this.$super();
     this.id = id;
-    this.composers = Store.make('composers',stacks.funcs.identity);
-    this.plugs = PlugStore.make('plugs');
-    this.adaptors = AdaptorStore.make();
-    this.plugPoints = Store.make('plugPoints',stacks.funcs.identity);
-    this.platePoints = Store.make('platePoints',stacks.funcs.identity);
-    this.composePrints = Store.make('Composers',stacks.funcs.identity);
+    // this.inBus = SelectedChannel.make(_.funcs.always(true));
+    // this.outBus = SelectedChannel.make(_.funcs.always(true));
+    this.composed = Store.make('NetworkComposers');
+
+    var callable = stacks.valids.isFunction(rack) ? rack : fn;
+
+    this.rack = (callable !== rack && RackSpace.isInstance(rack) ? rack : RackSpace.make('networkRack'));
+
+    if(stacks.valids.isFunction(callable)) callable.call(this);
   },
   use: function(id,cip){
-    if(this.composers.has(id)) return this;
-    var com = Compose.make(id,this.plugs,this.adaptors,this.plugPoints,this.platePoints);
-    this.composers.add(id || com.GUUID,com);
-    if(this.composePrints.has(cip)){
-      var cid = this.composePrints.Q(cip);
-      if(stacks.valids.isFunction(cid)) cid.call(com);
+    stacks.Asserted(stacks.valids.isString(id),'id must be a string value');
+    if(this.composed.has(id)) return this;
+    var addr = cip ? cip.split('/') : ema, rk = addr[0], fn = addr[1];
+    if(rk && this.rack.has(rk)){
+      var zr = this.rack.ns(rk);
+      if(zr.hasCompose(fn)){
+        var zc = zr.Compose(fn,id,this.rack,this);
+        this.composed.add(id,zc);
+      }
     }
     return this;
   },
-  get: function(gid){
-    stacks.Asserted(stacks.valids.isString(gid),'argument is the unique alias for this plug');
-    return this.composers.Q(gid);
+  crate: function(f){
+    if(stacks.valids.isString(f)) return this.rack.new.apply(this.rack,arguments);
+    return this.rack.rack.apply(this.rack,arguments);
   },
-  getPlugPoint: function(gid){
-    stacks.Asserted(stacks.valids.isString(gid),'argument is the unique alias for this plug');
-    return this.plugPoints.Q(gid);
+  uncrate: function(){ return this.rack.unrack.apply(this.rack,arguments); },
+  hasCrate: function(){ return this.rack.has.apply(this.rack,arguments); },
+  get: function(id){
+    return this.composed.get(id);
   },
-  getPlatePoint: function(gid){
-    stacks.Asserted(stacks.valids.isString(gid),'argument is the unique alias for this plug');
-    return this.platePoints.Q(gid);
+  remove: function(id){
+    return this.composed.remove(id);
+  },
+  has: function(comp){
+    if(Compose.isInstance(comp) && comp._nid){
+      this.composed.has(comp._nid);
+    }
+    return this.composed.has(comp);
   }
 });
 
-var Composable = exports.Composable = stacks.Class({
-    init: function(ns){
-      stacks.Asserted(stacks.valids.isString(ns),'first argument supplied must be a string');
-      this.ns = ns;
-      this.plugs = PlugStore.make(ns+":plugs");
-      this.adaptors = AdaptorStore.make(ns+":adaptors");
-      this.plugPoints = Store.make(ns+":plugPoints",stacks.funcs.identity);
-      this.platePoints = Store.make(ns+":platePoints",stacks.funcs.identity);
-      this.composePrints = Store.make(ns+":Composers",stacks.funcs.identity);
-    },
-    createComposer: function(id,fn){
-      var ck =  this.register(Composer.make(id));
-      if(stacks.valids.isFunction(fn)) fn.call(ck);
-      return ck;
-    },
-    register: function(composer){
-      if(!Composer.isInstance(composer)) return composer;
-      this.plugs.each(this.$closure(function(e,i){
-        var nsd = [this.ns,i].join('.');
-        composer.plugs.register(nsd,e);
-      }));
-      this.plugPoints.each(this.$closure(function(e,i){
-        var nsd = [this.ns,i].join('.');
-        composer.plugPoints.register(nsd,e);
-      }));
-      this.platePoints.each(this.$closure(function(e,i){
-        var nsd = [this.ns,i].join('.');
-        composer.platePoints.register(nsd,e);
-      }));
-      this.adaptors.each(this.$closure(function(e,i){
-        var nsd = [this.ns,i].join('.');
-        composer.adaptors.register(nsd,e);
-      }));
-      this.composePrints.each(this.$closure(function(e,i){
-        var nsd = [this.ns,i].join('.');
-        composer.composePrints.register(nsd,e);
-      }));
-      return composer;
-    },
-    registerPlug: function(){
-      this.plugs.register.apply(this.plugs,arguments);
-    },
-    registerPlugPoint: function(){
-      this.plugPoints.register.apply(this.plugPoints,arguments);
-    },
-    registerPlatePoint: function(){
-      this.platePoints.register.apply(this.platePoints,arguments);
-    },
-    registerAdaptor: function(){
-      this.adaptors.register.apply(this.adaptors,arguments);
-    },
-    registerCompose: function(){
-      this.composePrints.register.apply(this.composePrints,arguments);
-    },
+var RackSpace = exports.RackSpace = stacks.Configurable.extends({
+  init: function(id){
+    stacks.Asserted(stacks.valids.isString(id),'an "id" of string type is required ');
+    this.$super();
+    this.id = id;
+    this.racks = stacks.Storage.make('rackspace');
+  },
+  has: function(ns){
+    return this.racks.has(ns);
+  },
+  ns: function(ns){
+    if(!this.has(ns)) return;
+    return this.racks.get(ns);
+  },
+  new: function(id){
+    stacks.Asserted(stacks.valids.isString(id),'first args must be a string');
+    if(this.has(id)) return this.ns(id);
+    return this.racks.add(id,Rack.make(id));
+  },
+  rack: function(rack){
+    stacks.Asserted(Rack.isInstance(rack),'first args must be a Rack instance');
+    if(this.racks.has(rack.id)) return;
+    return this.racks.add(rack.id,rack);
+  },
+  unrack: function(rack){
+    if(Rack.isInstance(rack)){
+      return this.racks.remove(rack.id)
+    }
+    if(stack.valids.isString(rack)){
+      return this.racks.remove(id);
+    }
+    return;
+  }
+});
+
+var Rack = exports.Rack = stacks.Configurable.extends({
+  init: function(id){
+    stacks.Asserted(stacks.valids.isString(id),'an "id" of string type is required ');
+    this.$super();
+    this.id = id;
+    this.composed = ComposeStore.make("Composers");
+    this.adapters = AdapterStore.make("plugs");
+    this.plugs = PlugStore.make("plugs");
+    this.plugPoints = Store.make("plugPoints",stacks.funcs.identity);
+    this.platePoints = Store.make("platePoints",stacks.funcs.identity);
+    this.mutators = Store.make("MutatorStore",stacks.funcs.identity);
+  },
+  hasCompose: function(id){
+    return this.composed.has(id);
+  },
+  hasPlug: function(id){
+    return this.plugs.has(id);
+  },
+  hasMutator: function(id){
+    return this.mutators.has(id);
+  },
+  hasAdapter: function(id){
+    return this.adapters.has(id);
+  },
+  hasPlugPoint: function(id){
+    return this.plugPoints.has(id);
+  },
+  hasPlatePoints: function(id){
+    return this.platePoints.has(id);
+  },
+  Plug: function(id){
+    return this.plugs.Q.apply(this.plugs,arguments);
+  },
+  Adapter: function(id){
+    return this.adapters.Q.apply(this.plugs,arguments);
+  },
+  Mutator: function(id){
+    return this.mutators.Q.apply(this.mutators,arguments);
+  },
+  PlugPoint: function(id){
+    return this.plugPoint.Q.apply(this.plugPoint,arguments);
+  },
+  PlatePoint: function(id){
+    return this.platePoint.Q.apply(this.platePoint,arguments);
+  },
+  Compose: function(id,com){
+    return this.composed.Q.apply(this.composed,arguments);
+  },
+  registerPlug: function(){
+    return this.plugs.register.apply(this.plugs,arguments);
+  },
+  registerPlugPoint: function(){
+    return this.plugPoints.register.apply(this.plugPoints,arguments);
+  },
+  registerPlatePoint: function(){
+    return this.platePoints.register.apply(this.platePoints,arguments);
+  },
+  registerCompose: function(){
+    return this.composed.register.apply(this.composed,arguments);
+  },
+  registerAdapter: function(){
+    return this.adapters.register.apply(this.adapters,arguments);
+  },
+  registerMutator: function(id,fn){
+    return this.mutators.register(id,Mutators(fn));
+  },
 });
