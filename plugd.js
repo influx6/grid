@@ -731,7 +731,10 @@ var Network = exports.Network = stacks.Configurable.extends({
     if(stacks.valids.isFunction(callable)) callable.call(this);
   },
   use: function(addr,id){
-    return this.Resource.apply(this,arguments);
+    stacks.Asserted(!this.has(id),stacks.Util.String(' ',id,'already attached!'));
+    var cr = this.Resource.apply(this.rack,arguments);
+    this.composed.add(id,cr);
+    return cr;
   },
   crate: function(f){
     if(stacks.valids.isString(f)) return this.rack.new.apply(this.rack,arguments);
@@ -752,10 +755,11 @@ var Network = exports.Network = stacks.Configurable.extends({
     return this.composed.has(comp);
   },
   getResource: function(){
-    this.rack.getResource.apply(this.rack,arguments);
+    var cr = this.rack.getResource.apply(this.rack,arguments);
+    return cr;
   },
   Resource: function(){
-    this.rack.resource.apply(this.rack,arguments);
+    return this.resource.apply(this,arguments);
   }
 });
 
@@ -804,8 +808,9 @@ var RackSpace = exports.RackSpace = stacks.Configurable.extends({
 
     if(!this.has(rack)) return;
 
-    var r = this.ns(rack);
-    return r.resource.apply(r,tr.concat(rest));
+    var r = this.ns(rack), cr = r.resource.apply(r,tr.concat(rest));
+    cr.track = rest;
+    return cr;
   },
   getResource: function(addr){
     stacks.Asserted(stacks.valids.isString(addr),'first argument must be a string with format: {rack}/{type}/{id}');
@@ -819,8 +824,9 @@ var RackSpace = exports.RackSpace = stacks.Configurable.extends({
 
     if(!this.has(rack)) return;
 
-    var r = this.ns(rack);
-    return r.getResource.apply(r,tr.concat(rest));
+    var r = this.ns(rack), cr = r.getResource.apply(r,tr.concat(rest));
+    cr.track = rest;
+    return cr;
   }
 });
 
@@ -873,6 +879,7 @@ var Rack = exports.Rack = stacks.Configurable.extends({
         rest = stacks.enums.nthRest(arguments,2);
 
     var args = [name].concat(rest);
+
     switch(type){
       case 'adapters':
         res = this.getAdapter.apply(this,args);
