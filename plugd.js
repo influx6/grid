@@ -190,9 +190,11 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     this.detachPlate = this.$closure(function(){
       this.emit('detachPlate',plate);
+      if(this.isAttached()){
+        bind.unstream();
+        bindrs.unstream();
+      }
       plate = bind = null;
-      bind.unstream();
-      bindrs.unstream();
       stacks.enums.each(bindings,function(e,i,o,fn){
         e.unstream();
         fn(true);
@@ -567,7 +569,7 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     this.UUID = stacks.Util.guid();
 
     this.secure('close',function(){
-      src.channel.replies.off(contractHandle);
+      src.channel.off(contractHandle);
       return stm.close();
     });
 
@@ -696,7 +698,7 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
 
     this.secure('close',function(){
-      src.channel.packets.off(contractHandle);
+      src.channel.off(contractHandle);
       return stm.close();
     });
 
