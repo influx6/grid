@@ -4,7 +4,6 @@ var plug = require('../plugd.js');
 var expects = stacks.Expects;
 
 stacks.JzGroup('plug channel specification', function (_){
-    var ch = plug.Channel.make();
     var sc = plug.SelectedChannel.make('rock');
     var tc = plug.TaskChannel.make('rock');
     var rc = plug.ReplyChannel.make('rock');
@@ -25,7 +24,7 @@ stacks.JzGroup('plug channel specification', function (_){
         $.sync(function (c) {
           expects.isObject(c);
         });
-        $.for(ch);
+        $.for(sc);
     });
 
     _('can i create a selected channel',function($) {
@@ -49,7 +48,7 @@ stacks.JzGroup('plug channel specification', function (_){
     _('can i create a reply channel',function($) {
         $.sync(function (c) {
             expects.isObject(c);
-            expects.isTrue(plug.Channel.isType(c));
+            expects.isTrue(plug.SelectedChannel.isType(c));
             expects.isTrue(plug.ReplyChannel.isType(c));
         });
         $.for(rc);
@@ -64,7 +63,7 @@ stacks.JzGroup('plug channel specification', function (_){
         return next();
       });
 
-      $.for(ch);
+      $.for(sc);
     });
 
     _('can i emit only tasks in tasks channels',function($){

@@ -34,18 +34,17 @@ stacks.JzGroup('plate specification', function (_){
 
   _('can get stream data in a plate',function($){
 
-    var f = plate.dispatchTask('bucks',2322,'rock');
 
     $.async(function(d,n,g){
       n();
-      d.channels.packets.on(g(function(i){
+      d.channel.on(g(function(i){
         expects.isObject(i);
         expects.truthy(i);
       }));
-      f.ok();
     });
 
     $.for(plate);
+    plate.Task('bucks',{name:'rock'});
   });
 
 
