@@ -164,12 +164,17 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     var bindings = [];
 
     this.channel = TaskChannel.make(id);
+    this.replyChannel = ReplyChannel.make(stacks.funcs.always(true));
 
     this.configs.add('contract',id);
     this.configs.add('id',id);
     this.configs.add('gid',gid);
 
-    var plate = null,bind;
+    var plate = null,bind,bindrs;
+
+    this.pub('attachPlate');
+    this.pub('detachPlate');
+    this.pub('release');
 
     this.isAttached = this.$closure(function(){
       return plate != null;
@@ -178,14 +183,16 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.attachPlate = this.$closure(function(pl){
       if(this.isAttached() || !Plate.isInstance(pl)) return;
       bind = pl.channel.stream(this.channel);
-      this.emit('attachPlate',pl);
+      bindrs = this.replyChannel.stream(pl.channel);
       plate = pl;
+      this.emit('attachPlate',pl);
     });
 
     this.detachPlate = this.$closure(function(){
       this.emit('detachPlate',plate);
       plate = bind = null;
       bind.unstream();
+      bindrs.unstream();
       stacks.enums.each(bindings,function(e,i,o,fn){
         e.unstream();
         fn(true);
@@ -196,16 +203,24 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     this.$secure('dispatch',function (t) {
       if(!this.isAttached()) return;
-      plate.dispatch(f);
+      plate.dispatch(t);
+    });
+
+    this.$secure('dispatchReply',function (t) {
+      this.replyChannel.emit(t);
     });
 
     this.$secure('idispatch',function (t) {
       if(!this.isAttached()) return;
-      plate.idispatch(f);
+      plate.idispatch(t);
     });
 
     this.bindWithPlate = this.$closure(function(fn){
-      if(!this.isAttached()) return;
+      if(!this.isAttached()){
+        return this.afterOnce('attachPlate',this.$bind(function(f){
+            return fn.call(this,plate);
+        }));
+      }
       return (stacks.valids.isFunction(fn) ? fn.call(this,plate) : null);
     });
 
@@ -221,7 +236,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       if(arguments.length === 1)
         stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
       if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
-      stacks.Asserted(!this.internalChannels.has(id),'id "'+id+'" is already in use');
+      stacks.Asserted(!this.internalTasks.has(id),'id "'+id+'" is already in use');
       var tk = TaskChannel.make(tag,picker);
       this.internalTasks.add(id,tk);
       this.bindWithPlate(function(pl){
@@ -236,7 +251,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       if(arguments.length === 1)
         stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
       if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
-      stacks.Asserted(!this.internalChannels.has(id),'id "'+id+'" is already in use');
+      stacks.Asserted(!this.internalReplies.has(id),'id "'+id+'" is already in use');
       var tk = ReplyChannel.make(tag,picker);
       this.internalReplies.add(id,tk);
       this.bindWithPlate(function(pl){
@@ -249,7 +264,8 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     if(stacks.valids.isFunction(fn)) fn.call(this);
   },
   replies: function(f){
-    return this.internalReplies.get(f);
+    if(f) return this.internalReplies.get(f);
+    return this.replyChannel;
   },
   tasks: function(f){
     if(f) return this.internalTasks.get(f);
@@ -292,6 +308,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.emit('release',this);
   },
   close: function(){
+    this.$super();
     this.release();
     this.detachAllPoint();
     this.emit('close',this);
@@ -307,7 +324,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
     stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
     var self = this, mesg = Packets.Reply(id,body,this.GUUID);
-    self.dispatch(mesg);
+    self.dispatchReply(mesg);
     return mesg;
   },
   iTask:  function (id,body) {
@@ -333,33 +350,30 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     var fx = stacks.funcs.always(true);
     this.points = Store.make('platePoints',stacks.funcs.identity);
     this.proxy = stacks.Proxy(function(){ return true; });
+    this.outProxy = stacks.Proxy(function(){ return true; });
     this.channel = SelectedChannel.make(this.proxy.proxy);
-    this.disto = stacks.Distributors();
+    this.ichannel = SelectedChannel.make(this.outProxy.proxy);
 
     var bindings = {};
-    // var bindingFn = this.$bind(function(k){
-    //   if(Packets.isExtra(k)){
-    //     if(k.origin === this.GUUID) return;
-    //     return this.channel.emit(k);
-    //   }
-    // });
 
     this.bindChannel = this.$bind(function(chan){
       if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
-      bindings[chan.GUUID] = chan.stream(this.channel);
-      this.disto.add(chan.$emit);
+      bindings[chan.GUUID] = {
+         in: chan.stream(this.channel),
+         out: this.ichannel.stream(chan)
+      };
     });
 
     this.unbindChannel = this.$bind(function(chan){
       if(!SelectedChannel.isType(chan) || stacks.valids.not.contains(bindings,chan.GUUID)) return;
-      this.bindings[chan.GUUID].unstream();
-      chan.off(bindingFn);
+      var p = this.bindings[chan.GUUID];
+      p.in.unstream(); p.out.unstream();
     });
 
     this.unbindAllChannel = this.$bind(function(chan){
       stacks.enums.each(bindings,function(e,i,o,fn){
         if(chan && i === chan.GUUID) return fn(null);
-        e.unstream();
+        e.in.unstream(); e.out.unstream();
         return fn(null);
       });
     });
@@ -376,7 +390,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.$secure('idispatch',function(f){
       if(!Packets.isExtra(f)) return;
       f.origin = this.GUUID;
-      this.disto.distribute(f);
+      this.ichannel.emit(f);
     });
   },
   plug: function(id,gid,fn){
@@ -538,12 +552,11 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
       return fn.call(this,r,stm);
     });
     var contractHandle = stacks.funcs.bind(function(f){
-      if(!Packets.isReply(f)) return null;
       return this.interogate(f);
     },contract);
 
     contract.onPass(handle);
-    src.channel.on(contractHandle);
+    src.replyChannel.on(contractHandle);
 
     stacks.enums.each(dests,function(e,i,o,ff){
       if(!Plug.isType(e)) return ff(null);
@@ -636,7 +649,7 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     },contract);
 
     contract.onPass(handle);
-    src.channel.packets.on(contractHandle);
+    src.channel.on(contractHandle);
 
     stacks.enums.each(dests,function(e,i,o,ff){
       if(!Plate.isType(e)) return ff(null);
