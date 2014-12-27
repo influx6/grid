@@ -397,6 +397,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     return new Plug(id,gid,fn)
   },
   tasks: function(){ return this.channel; },
+  itasks: function(){ return this.ichannel; },
   hookProxy: function(c){
     c.Task = stacks.funcs.bind(this.Task,this);
     c.Reply = stacks.funcs.bind(this.Reply,this);
