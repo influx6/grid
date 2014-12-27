@@ -286,15 +286,16 @@ var Plug = exports.Plug = stacks.Configurable.extends({
   detachPoint: function(item){
     if(stacks.valids.isString(item) && this.points.has(item)){
       var pt = this.points.Q(item);
-      console.log('remove item:',item);
       if(stacks.valids.isFunction(pt.close)) pt.close();
       this.points.remove(item);
       return pt;
     };
     if(stacks.valids.isObject(item)){
+      var self = this;
       this.points.each(function(f,i,o,fn){
         if(f == item){
           if(stacks.valids.isFunction(f.close)) f.close();
+          self.points.remove(i);
           return fn(true);
         }
       });
@@ -429,12 +430,15 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     if(stacks.valids.isString(item) && this.points.has(item)){
       var pt = this.points.Q(item);
       if(stacks.valids.isFunction(pt.close)) pt.close();
+      this.points.remove(item);
       return pt;
     };
     if(stacks.valids.isObject(item)){
+      var self = this;
       this.points.each(function(f,i,o,fn){
         if(f == item){
           if(stacks.valids.isFunction(f.close)) f.close();
+          self.points.remove(i);
           return fn(true);
         }
       });
