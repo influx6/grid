@@ -286,7 +286,9 @@ var Plug = exports.Plug = stacks.Configurable.extends({
   detachPoint: function(item){
     if(stacks.valids.isString(item) && this.points.has(item)){
       var pt = this.points.Q(item);
+      console.log('remove item:',item);
       if(stacks.valids.isFunction(pt.close)) pt.close();
+      this.points.remove(item);
       return pt;
     };
     if(stacks.valids.isObject(item)){
@@ -569,7 +571,7 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     this.UUID = stacks.Util.guid();
 
     this.secure('close',function(){
-      src.channel.off(contractHandle);
+      src.replyChannel.off(contractHandle);
       return stm.close();
     });
 
