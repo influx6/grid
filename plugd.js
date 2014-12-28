@@ -158,6 +158,8 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.id = id;
     this.gid = gid;
 
+    // var ready = this.bootFuture = stacks.Future.make();
+
     this.points = Store.make('plugPoints',stacks.funcs.identity);
     this.internalTasks = Store.make('tasks',stacks.funcs.identity);
     this.internalReplies = Store.make('replies',stacks.funcs.identity);
@@ -166,15 +168,28 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.channel = TaskChannel.make(id);
     this.replyChannel = ReplyChannel.make(stacks.funcs.always(true));
 
+    this.channel.pause();
+    this.replyChannel.pause();
+
     this.configs.add('contract',id);
     this.configs.add('id',id);
     this.configs.add('gid',gid);
 
     var plate = null,bind,bindrs;
 
+    this.pub('boot');
     this.pub('attachPlate');
     this.pub('detachPlate');
     this.pub('release');
+
+    this.boot = this.$bind(function(){
+      this.emit('boot',true);
+    });
+
+    this.after('boot',this.$bind(function(){
+      this.channel.resume();
+      this.replyChannel.resume();
+    }));
 
     this.isAttached = this.$closure(function(){
       return plate != null;
@@ -186,6 +201,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       bindrs = this.replyChannel.stream(pl.channel);
       plate = pl;
       this.emit('attachPlate',pl);
+      this.boot();
     });
 
     this.detachPlate = this.$closure(function(){
@@ -314,9 +330,9 @@ var Plug = exports.Plug = stacks.Configurable.extends({
   },
   close: function(){
     this.$super();
+    this.emit('close',this);
     this.release();
     this.detachAllPoint();
-    this.emit('close',this);
   },
   Task:  function (id,body) {
     stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
@@ -358,6 +374,21 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.outProxy = stacks.Proxy(function(){ return true; });
     this.channel = SelectedChannel.make(this.proxy.proxy);
     this.ichannel = SelectedChannel.make(this.outProxy.proxy);
+
+    this.pub('boot');
+    this.pub('shutdown');
+
+    // this.channel.pause();
+    // this.ichannel.pause();
+
+    this.boot = this.$bind(function(){
+      this.emit('boot',true);
+    });
+
+    this.after('boot',this.$bind(function(){
+      this.channel.resume();
+      this.ichannel.resume();
+    }));
 
     var bindings = {};
 
@@ -409,6 +440,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     c.iTask = stacks.funcs.bind(this.iTask,this);
     c.iReply = stacks.funcs.bind(this.iReply,this);
     c.watch = stacks.funcs.bind(this.watch,this);
+    c.boot = stacks.funcs.bind(this.boot,this);
     c.plugQueue = stacks.funcs.bind(this.plugQueue,this);
     c.tasks = stacks.funcs.bind(this.tasks,this);
     c.dispatch = stacks.funcs.bind(this.dispatch,this);
@@ -785,6 +817,7 @@ var Compose = exports.Compose = stacks.Configurable.extends({
     stacks.Asserted(Plug.isInstance(plug),'first argument is required to be a plug instance');
     if(!this.plugs.has(gid || plug.GUUID)){
       this.plugs.add(gid || plug.GUUID,plug);
+      plug.gid = gid;
       plug.attachPlate(this.plate);
     }
     return this;
