@@ -158,6 +158,9 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.id = id;
     this.gid = gid;
 
+    this.callWith = this.$bind(function(fx){
+      if(stacks.valids.isFunction(fx)) fx.call(this);
+    });
     // var ready = this.bootFuture = stacks.Future.make();
 
     this.points = Store.make('plugPoints',stacks.funcs.identity);
@@ -380,6 +383,9 @@ var Plate = exports.Plate = stacks.Configurable.extends({
 
     // this.channel.pause();
     // this.ichannel.pause();
+    this.callWith = this.$bind(function(fx){
+      if(stacks.valids.isFunction(fx)) fx.call(this);
+    });
 
     this.boot = this.$bind(function(){
       this.emit('boot',true);
@@ -391,6 +397,14 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     }));
 
     var bindings = {};
+
+    this.inbindChannel = this.$bind(function(chan){
+      if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
+      bindings[chan.GUUID] = {
+         out: this.channel.stream(chan),
+         in: { unstream: function(){}}
+      };
+    });
 
     this.bindChannel = this.$bind(function(chan){
       if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
@@ -428,6 +442,14 @@ var Plate = exports.Plate = stacks.Configurable.extends({
       f.origin = this.GUUID;
       this.ichannel.emit(f);
     });
+  },
+  share: function(plate){
+    if(!Plate.isInstance(plate)) return;
+    this.inbindChannel(plate.channel);
+  },
+  unshare: function(plate){
+    if(!Plate.isInstance(plate)) return;
+    this.unbindChannel(plate.channel);
   },
   plug: function(id,gid,fn){
     return new Plug(id,gid,fn)
@@ -645,20 +667,28 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
       return t;
     });
 
-    this.secure('iTask',function(n,b){
+    this.secure('iTask',function(n,b,f){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.iTask(n,b);
-      stm.emit(f);
-      return t;
+      return src.iTask(n,b,f);
     });
 
-    this.secure('iReply',function(n,b){
+    this.secure('iReply',function(n,b,f){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.iReply(n,b);
-      stm.emit(f);
-      return t;
+      return src.iReply(n,b,f);
+    });
+
+    this.secure('srcTask',function(n,b,f){
+      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
+      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
+      return src.Task(n,b,f);
+    });
+
+    this.secure('srcReply',function(n,b,f){
+      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
+      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
+      return src.Reply(n,b,f);
     });
 
     this.secure('tap',function(fn,name){
@@ -715,20 +745,28 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
       return t;
     });
 
-    this.secure('iTask',function(n,b){
+    this.secure('iTask',function(n,b,f){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.iTask(n,b);
-      stm.emit(f);
-      return t;
+      return src.iTask(n,b,f);
     });
 
-    this.secure('iReply',function(n,b){
+    this.secure('iReply',function(n,b,f){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.iReply(n,b);
-      stm.emit(f);
-      return t;
+      return src.iReply(n,b,f);
+    });
+
+    this.secure('srcTask',function(n,b,f){
+      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
+      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
+      return src.Task(n,b,f);
+    });
+
+    this.secure('srcReply',function(n,b,f){
+      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
+      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
+      return src.Reply(n,b,f);
     });
 
     this.secure('mux',function(fn){
@@ -810,8 +848,20 @@ var Compose = exports.Compose = stacks.Configurable.extends({
     // this.plugPoints = stacks.Storage.make();
     // this.platePoints = stacks.Storage.make();
 
+    this.callWith = this.$bind(function(fx){
+      if(stacks.valids.isFunction(fx)) fx.call(this);
+    });
+
     //added plate bindings
     this.plate.hookProxy(this);
+  },
+  share: function(compose){
+    if(!Compose.isInstance(compose)) return;
+    this.plate.share(compose.plate);
+  },
+  unshare: function(compose){
+    if(!Compose.isInstance(compose)) return;
+    this.plate.unshare(compose.plate);
   },
   use: function(plug,gid){
     stacks.Asserted(Plug.isInstance(plug),'first argument is required to be a plug instance');
@@ -920,6 +970,9 @@ var Network = exports.Network = stacks.Configurable.extends({
     this.composed = Store.make('Compose::Network');
     this.proxy = stacks.Proxy(function(){ return true; });
     this.channel = SelectedChannel.make(this.proxy.proxy);
+    this.callWith = this.$bind(function(fx){
+      if(stacks.valids.isFunction(fx)) fx.call(this);
+    });
 
     this.dispatch = this.$bind(function(f){
       this.channel.emit(f);
@@ -934,7 +987,7 @@ var Network = exports.Network = stacks.Configurable.extends({
 
     this.rack = (callable !== rack && RackSpace.isInstance(rack) ? rack : RackSpace.make('Rack::Network'));
 
-    if(stacks.valids.isFunction(callable)) callable.call(this);
+    this.callWith(callable);
   },
   use: function(addr,id){
     stacks.Asserted(!this.has(id),stacks.Util.String(' ',id,'already attached!'));
