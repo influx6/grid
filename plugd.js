@@ -251,6 +251,8 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     var plate = null,bind,bindrs;
 
     this.pub('boot');
+    this.pub('networkAttached');
+    this.pub('networkDetached');
     this.pub('attachPlate');
     this.pub('detachPlate');
     this.pub('release');
@@ -266,6 +268,10 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     this.isAttached = this.$closure(function(){
       return plate != null;
+    });
+
+    this.hasNetwork = this.$closure(function(){
+      return network != null;
     });
 
     this.attachPlate = this.$closure(function(pl){
@@ -345,25 +351,34 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     });
 
     this.attachNetwork = this.$bind(function(net){
-      if(!Network.isInstance(net)) return;
+      if(!Network.isInstance(net) || this.hasNetwork()) return;
       network = net;
       this.emit('networkAttached',net);
-      this.withNetwork(this.tasks());
+      this.withNetwork(this.tasks(),this.replies());
+
     });
 
     this.detachNetwork = this.$bind(function(){
-      if(!Network.isInstance(network)) return;
+      if(!this.hasNetwork()) return;
       this.tasks().unbind(network.plate.channel);
       network = null;
       this.emit('networkDetached',net);
     });
 
-    this.withNetwork = this.$bind(function(chan){
+    this.withNetwork = this.$bind(function(chan,xchan){
+      if(!SelectedChannel.isType(chan)) return;
+
       this.afterOnce('networkAttached',function(net){
-        if(network) network.bindIn(chan);
+        if(network){
+          network.bindIn(chan);
+          network.bindOut(xchan);
+        }
       });
       this.afterOnce('networkDetached',function(net){
-        if(network) network.unbind(chan);
+        if(network){
+          network.unbind(chan);
+          network.unbind(xchan);
+        }
       });
     });
 
