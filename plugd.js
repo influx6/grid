@@ -228,6 +228,31 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.internalTasks = Store.make('tasks',stacks.funcs.identity);
     this.internalReplies = Store.make('replies',stacks.funcs.identity);
 
+    this.pauseAllTasks = this.$bind(function(fc){
+      this.internalTasks.each(function(e,i,o,fx){
+        if(stacks.valids.Function(e.pause)) e.pause();
+        fx(null);
+      },fc)
+    });
+    this.pauseAllReplies = this.$bind(function(fc){
+      this.internalReplies.each(function(e,i,o,fx){
+        if(stacks.valids.Function(e.pause)) e.pause();
+        fx(null);
+      },fc)
+    });
+    this.resumeAllTasks = this.$bind(function(fc){
+      this.internalTasks.each(function(e,i,o,fx){
+        if(stacks.valids.Function(e.pause)) e.resume();
+        fx(null);
+      },fc)
+    });
+    this.resumeAllReplies = this.$bind(function(fc){
+      this.internalReplies.each(function(e,i,o,fx){
+        if(stacks.valids.Function(e.pause)) e.resume();
+        fx(null);
+      },fc)
+    });
+
     this.id = id;
     this.gid = gid;
 
@@ -365,21 +390,39 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       this.emit('networkDetached',net);
     });
 
-    this.withNetwork = this.$bind(function(chan,xchan){
+    this.networkOut = this.$bind(function(chan){
       if(!SelectedChannel.isType(chan)) return;
 
       this.afterOnce('networkAttached',function(net){
         if(network){
-          network.bindIn(chan);
-          network.bindOut(xchan);
+          network.bindOut(chan);
         }
       });
       this.afterOnce('networkDetached',function(net){
         if(network){
           network.unbind(chan);
-          network.unbind(xchan);
         }
       });
+    });
+
+    this.networkIn = this.$bind(function(chan){
+      if(!SelectedChannel.isType(chan)) return;
+
+      this.afterOnce('networkAttached',function(net){
+        if(network){
+          network.bindIn(chan);
+        }
+      });
+      this.afterOnce('networkDetached',function(net){
+        if(network){
+          network.unbind(chan);
+        }
+      });
+    });
+
+    this.withNetwork = this.$bind(function(chan,xchan){
+      this.networkIn(chan);
+      this.networkOut(xchan);
     });
 
     this.exposeNetwork = this.$bind(function(fx){
