@@ -9,11 +9,11 @@ stacks.JzGroup('plug channel specification', function (_){
     var rc = plug.ReplyChannel.make('rock');
 
     var tm = plug.Packets.Task('rock');
-    tm.stream.emit({'uuid':1,'data':'fox'});
-    tm.stream.emit({'uuid':3,'data':'wolf'});
-    tm.stream.emit({'uuid':4,'data':'chicken'});
+    tm.emit({'uuid':1,'data':'fox'});
+    tm.emit({'uuid':3,'data':'wolf'});
+    tm.emit({'uuid':4,'data':'chicken'});
     var rm = plug.Packets.Reply('rock');
-    rm.stream.emit(0x32FFF232);
+    rm.emit(0x32FFF232);
 
     tc.emit(tm);
     tc.emit(rm);

@@ -1,5 +1,5 @@
 var stacks = require("stackq");
-
+var AllTrue = stacks.funcs.always(true);
 var ema = [];
 var PSMeta = { task: true, reply: true};
 var MessagePicker = function(n){ return n['message']; };
@@ -13,7 +13,8 @@ var packets = 0x1874F43FF45;
 
 var PacketSchema = stacks.Schema({},{
     message: 'string',
-    stream: 'stream',
+    packets: 'stream',
+    stream: 'function',
     tag: 'number',
     level: 'number',
     uuid: 'string',
@@ -27,6 +28,9 @@ var PacketSchema = stacks.Schema({},{
       maxWrite: 1,
     },
     stream:{
+      maxWrite: 1,
+    },
+    packets:{
       maxWrite: 1,
     },
     cid:{
@@ -43,22 +47,37 @@ var PacketSchema = stacks.Schema({},{
     },
   },{
   stream: function(f,fn){
-    return fn(stacks.Stream.isType(f));
+    return fn(stacks.Persisto.isInstance(f));
   }
 });
 
 var Packets = exports.Packets = function(id,tag,body,private){
   var shell = PacketSchema.extends({});
   // shell.level = intrapack;
+  var locked = false;
   shell.private = private;
   shell.tag = tag;
   shell.message = id;
   shell.body = body || {};
-  shell.stream = stacks.Stream.make();
-  shell.emit = stacks.funcs.bindByPass(shell.stream.emit,shell.stream);
-  shell.endData = stacks.funcs.bindByPass(shell.stream.endData,shell.stream);
+
+  /*packet level-function-begin*/
+
+  shell.lock = function(){ locked = true; };
+  shell.locked = function(){ return locked; };
+  shell.packets = stacks.Persisto.make();
+  shell.emit = stacks.funcs.bindByPass(shell.packets.emit,shell.packets);
+  shell.copy = stacks.funcs.bindByPass(shell.packets.copy,shell.packets);
+  shell.link = stacks.funcs.bindByPass(shell.packets.link,shell.packets);
+  shell.flood = stacks.funcs.bindByPass(shell.packets.flood,shell.packets);
+  shell.end = stacks.funcs.bindByPass(shell.packets.end,shell.packets);
+  shell.stream = stacks.funcs.bindByPass(shell.packets.stream,shell.packets);
+  shell.close = stacks.funcs.bindByPass(shell.packets.close,shell.packets);
+
+  /*packet level-function-end*/
+
   shell.uuid = stacks.Util.guid();
   shell.toString = function(){ return [this.message,this.body].join(':'); };
+
   if(shell.body && stacks.valids.not.exists(shell.body.chUID)){
     shell.body.chUID = stacks.Util.guid();
   }
@@ -115,11 +134,53 @@ var Store = exports.Store = stacks.FunctionStore.extends({
 });
 
 var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
-  init: function(id,picker){
+  init: function(id,picker,fx){
     this.$super(id,picker || MessagePicker);
+    this.lockProxy = stacks.Proxy(function(f,next,end){
+      if(!Packets.isPacket(f)) return;
+      if(stacks.valids.isFunction(f.locked) && !!f.locked()) return;
+      return next();
+    });
+
     this.mutts.add(function(f,next,end){
       if(!Packets.isPacket(f)) return;
       return next();
+    });
+
+    if(stacks.valids.Function(fx)) fx.call(this);
+
+    this.mutts.add(this.lockProxy.proxy);
+
+    var bindings = {};
+
+    this.bindOut = this.$bind(function(chan){
+      if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
+      bindings[chan.GUUID] = {
+         out: this.stream(chan),
+         in: { unstream: function(){}}
+      };
+    });
+
+    this.bindIn = this.$bind(function(chan){
+      if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
+      bindings[chan.GUUID] = {
+         in: chan.stream(this),
+         out: { unstream: function(){}}
+      };
+    });
+
+    this.unbind = this.$bind(function(chan){
+      if(!SelectedChannel.isType(chan) || stacks.valids.not.contains(bindings,chan.GUUID)) return;
+      var p = this.bindings[chan.GUUID];
+      p.in.unstream(); p.out.unstream();
+    });
+
+    this.unbindAllChannel = this.$bind(function(chan){
+      stacks.enums.each(bindings,function(e,i,o,fn){
+        if(chan && i === chan.GUUID) return fn(null);
+        e.in.unstream(); e.out.unstream();
+        return fn(null);
+      });
     });
   },
   mutate: function(fn){
@@ -132,9 +193,15 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
 
 var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
   init: function(id,picker){
-    this.$super(id,picker || MessagePicker);
+    this.$super(id,picker || MessagePicker,function(){
+      this.mutts.add(function(f,next,end){
+        if(!Packets.isTask(f)) return;
+        return next();
+      });
+    });
+
     this.mutts.add(function(f,next,end){
-      if(!Packets.isTask(f)) return;
+      f.locked();
       return next();
     });
   }
@@ -142,10 +209,11 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
 
 var ReplyChannel = exports.ReplyChannel = SelectedChannel.extends({
   init: function(id,picker){
-    this.$super(id,picker || MessagePicker);
-    this.mutts.add(function(f,next,end){
-      if(!Packets.isReply(f)) return;
-      return next();
+    this.$super(id,picker || MessagePicker,function(){
+      this.mutts.add(function(f,next,end){
+        if(!Packets.isReply(f)) return;
+        return next();
+      });
     });
   }
 });
@@ -154,19 +222,22 @@ var Plug = exports.Plug = stacks.Configurable.extends({
   init: function(id,gid,fn){
     this.$super();
     stacks.Asserted(stacks.valids.isString(id),"first argument must be a string");
+    var bindings = [],network;
+
+    this.points = Store.make('points',stacks.funcs.identity);
+    this.internalTasks = Store.make('tasks',stacks.funcs.identity);
+    this.internalReplies = Store.make('replies',stacks.funcs.identity);
 
     this.id = id;
     this.gid = gid;
 
-    this.callWith = this.$bind(function(fx){
-      if(stacks.valids.isFunction(fx)) fx.call(this);
+    this.makeName = this.$bind(function(sn){
+      if(stacks.valids.not.String(sn)){ return; }
+      var m;
+      if(stacks.valids.String(this.id)) m = this.id;
+      else m = this.gid;
+      return [m,sn].join('.');
     });
-    // var ready = this.bootFuture = stacks.Future.make();
-
-    this.points = Store.make('plugPoints',stacks.funcs.identity);
-    this.internalTasks = Store.make('tasks',stacks.funcs.identity);
-    this.internalReplies = Store.make('replies',stacks.funcs.identity);
-    var bindings = [];
 
     this.channel = TaskChannel.make(id);
     this.replyChannel = ReplyChannel.make(stacks.funcs.always(true));
@@ -174,7 +245,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.channel.pause();
     this.replyChannel.pause();
 
-    this.configs.add('contract',id);
     this.configs.add('id',id);
     this.configs.add('gid',gid);
 
@@ -214,12 +284,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
         bindrs.unstream();
       }
       plate = bind = null;
-      stacks.enums.each(bindings,function(e,i,o,fn){
-        e.unstream();
-        fn(true);
-      },function(){
-        bindings.length = 0;
-      });
+      this.destoryBindings();
     });
 
     this.$secure('dispatch',function (t) {
@@ -231,12 +296,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       this.replyChannel.emit(t);
     });
 
-    this.$secure('idispatch',function (t) {
-      if(!this.isAttached()) return;
-      plate.idispatch(t);
-    });
-
-    this.bindWithPlate = this.$closure(function(fn){
+    this.afterPlate = this.$closure(function(fn){
       if(!this.isAttached()){
         return this.afterOnce('attachPlate',this.$bind(function(f){
             return fn.call(this,plate);
@@ -245,10 +305,12 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       return (stacks.valids.isFunction(fn) ? fn.call(this,plate) : null);
     });
 
-    this.destoryAllBindings = this.$bind(function(){
+    this.destoryBindings = this.$bind(function(){
       stacks.enums.each(bindings,function(e,i,o,fn){
         e.unstream();
         fn(null);
+      },function(){
+        bindings.length = 0;
       });
     });
 
@@ -260,7 +322,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       stacks.Asserted(!this.internalTasks.has(id),'id "'+id+'" is already in use');
       var tk = TaskChannel.make(tag,picker);
       this.internalTasks.add(id,tk);
-      this.bindWithPlate(function(pl){
+      this.afterPlate(function(pl){
         var br = pl.channel.stream(tk);
         bindings.push(br);
       });
@@ -275,14 +337,45 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       stacks.Asserted(!this.internalReplies.has(id),'id "'+id+'" is already in use');
       var tk = ReplyChannel.make(tag,picker);
       this.internalReplies.add(id,tk);
-      this.bindWithPlate(function(pl){
+      this.afterPlate(function(pl){
         var br = tk.stream(pl.channel)
         bindings.push(br);
       });
       return tk;
     });
 
-    if(stacks.valids.isFunction(fn)) fn.call(this);
+    this.attachNetwork = this.$bind(function(net){
+      if(!Network.isInstance(net)) return;
+      network = net;
+      this.emit('networkAttached',net);
+      this.withNetwork(this.tasks());
+    });
+
+    this.detachNetwork = this.$bind(function(){
+      if(!Network.isInstance(network)) return;
+      this.tasks().unbind(network.plate.channel);
+      network = null;
+      this.emit('networkDetached',net);
+    });
+
+    this.withNetwork = this.$bind(function(chan){
+      this.afterOnce('networkAttached',function(net){
+        if(network) network.bindIn(chan);
+      });
+      this.afterOnce('networkDetached',function(net){
+        if(network) network.unbind(chan);
+      });
+    });
+
+    this.exposeNetwork = this.$bind(function(fx){
+      if(stacks.valids.Function(fx)) fx.call(network);
+      return network;
+    });
+
+    this.$rack(fn);
+  },
+  changeContract: function(n){
+    this.channel.changeContract(n);
   },
   replies: function(f){
     if(f) return this.internalReplies.get(f);
@@ -351,124 +444,74 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     self.dispatchReply(mesg);
     return mesg;
   },
-  iTask:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.iTask(id,body,this.GUUID);
-    self.idispatch(mesg);
-    return mesg;
-  },
-  iReply:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.iReply(id,body,this.GUUID);
-    self.idispatch(mesg);
-    return mesg;
-  },
 });
 
 var Plate = exports.Plate = stacks.Configurable.extends({
   init: function(id) {
+    var self = this;
     this.$super();
     this.id = id;
-    var fx = stacks.funcs.always(true);
-    this.points = Store.make('platePoints',stacks.funcs.identity);
+    this.configs.add('id',id);
+
+    this.points = Store.make('points',stacks.funcs.identity);
     this.proxy = stacks.Proxy(function(){ return true; });
-    this.outProxy = stacks.Proxy(function(){ return true; });
     this.channel = SelectedChannel.make(this.proxy.proxy);
-    this.ichannel = SelectedChannel.make(this.outProxy.proxy);
+
+    this.bindIn = stacks.funcs.bind(this.channel.bindIn,this.channel);
+    this.bindOut = stacks.funcs.bind(this.channel.bindOut,this.channel);
+    this.unbind = stacks.funcs.bind(this.channel.unbind,this.channel);
 
     this.pub('boot');
     this.pub('shutdown');
 
-    // this.channel.pause();
-    // this.ichannel.pause();
-    this.callWith = this.$bind(function(fx){
-      if(stacks.valids.isFunction(fx)) fx.call(this);
-    });
-
     this.boot = this.$bind(function(){
       this.emit('boot',true);
     });
-
     this.after('boot',this.$bind(function(){
       this.channel.resume();
-      this.ichannel.resume();
     }));
 
-    var bindings = {};
-
-    this.inbindChannel = this.$bind(function(chan){
-      if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
-      bindings[chan.GUUID] = {
-         out: this.channel.stream(chan),
-         in: { unstream: function(){}}
-      };
+    this.makeName = this.$bind(function(sn){
+      if(stacks.valids.not.String(sn)){ return; }
+      return [this.id,sn].join('.');
     });
-
-    this.bindChannel = this.$bind(function(chan){
-      if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
-      bindings[chan.GUUID] = {
-         in: chan.stream(this.channel),
-         out: this.ichannel.stream(chan)
-      };
-    });
-
-    this.unbindChannel = this.$bind(function(chan){
-      if(!SelectedChannel.isType(chan) || stacks.valids.not.contains(bindings,chan.GUUID)) return;
-      var p = this.bindings[chan.GUUID];
-      p.in.unstream(); p.out.unstream();
-    });
-
-    this.unbindAllChannel = this.$bind(function(chan){
-      stacks.enums.each(bindings,function(e,i,o,fn){
-        if(chan && i === chan.GUUID) return fn(null);
-        e.in.unstream(); e.out.unstream();
-        return fn(null);
-      });
-    });
-
-    this.configs.add('contract',id);
-    this.configs.add('id',id);
-    var self = this;
 
     this.$secure('dispatch',function(f){
       if(Packets.isExtra(f)) return;
       f.origin = this.GUUID;
       this.channel.emit(f);
     });
-    this.$secure('idispatch',function(f){
-      if(!Packets.isExtra(f)) return;
-      f.origin = this.GUUID;
-      this.ichannel.emit(f);
-    });
+  },
+  changeContract: function(n){
+    this.channel.changeContract(n);
   },
   share: function(plate){
     if(!Plate.isInstance(plate)) return;
-    this.inbindChannel(plate.channel);
+    this.channel.bindIn(plate.channel);
   },
   unshare: function(plate){
     if(!Plate.isInstance(plate)) return;
-    this.unbindChannel(plate.channel);
+    this.channel.unbind(plate.channel);
   },
   plug: function(id,gid,fn){
     return new Plug(id,gid,fn)
   },
   tasks: function(){ return this.channel; },
-  itasks: function(){ return this.ichannel; },
   hookProxy: function(c){
     c.Task = stacks.funcs.bind(this.Task,this);
     c.Reply = stacks.funcs.bind(this.Reply,this);
-    c.iTask = stacks.funcs.bind(this.iTask,this);
-    c.iReply = stacks.funcs.bind(this.iReply,this);
     c.watch = stacks.funcs.bind(this.watch,this);
+    c.makeName = stacks.funcs.bind(this.makeName,this);
+    c.switchFilter = stacks.funcs.bind(this.switchFilter,this);
     c.boot = stacks.funcs.bind(this.boot,this);
     c.plugQueue = stacks.funcs.bind(this.plugQueue,this);
     c.tasks = stacks.funcs.bind(this.tasks,this);
     c.dispatch = stacks.funcs.bind(this.dispatch,this);
-    c.bindChannel = stacks.funcs.bind(this.bindChannel,this);
-    c.unbindChannel = stacks.funcs.bind(this.unbindChannel,this);
-    c.unbindAllChannel = stacks.funcs.bind(this.unbindAllChannel,this);
+    c.bindIn = stacks.funcs.bind(this.bindIn,this);
+    c.bindOut = stacks.funcs.bind(this.bindOut,this);
+    c.unbind = stacks.funcs.bind(this.unbind,this);
+    c.share = stacks.funcs.bind(this.share,this);
+    c.unshare = stacks.funcs.bind(this.unshare,this);
   },
   point: function(alias){
     return this.points.Q(alias);
@@ -516,30 +559,11 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     self.dispatch(mesg);
     return mesg;
   },
-  iTask:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.iTask(id,body,this.GUUID);
-    self.idispatch(mesg);
-    return mesg;
-  },
-  iReply:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.iReply(id,body,this.GUUID);
-    self.idispatch(mesg);
-    return mesg;
-  },
   watch: function(uuid){
     var channel = new channels.SelectedChannel(uuid, MessagePicker);
     this.channel.subscriber = this.channel.stream(channel);
     return channel;
   },
-  // task: function (uuid,id,body) {
-    // var task = this.watch(uuid);
-    // task.task = this.disptachTask(id,uuid,data);
-    // return task;
-  // },
 });
 
 var PlugQueue = exports.PlugQueue = stacks.Class({
@@ -823,75 +847,6 @@ var AdapterStore = exports.AdapterStore = Store.extends({
   }
 });
 
-var ComposeStore = exports.ComposeStore = Store.extends({
-  init: function(id){
-    this.$super(id,function(fn){
-      var rest = stacks.enums.rest(arguments);
-      var apt = Compose.make.apply(Compose,rest);
-      fn.call(apt);
-      return apt;
-    });
-  }
-})
-
-var Compose = exports.Compose = stacks.Configurable.extends({
-  init: function(id,rack,net){
-    stacks.Asserted(stacks.valids.isString(id),'id must be a string value');
-    this.$super();
-    this.id = id;
-    this.rack = rack;
-    this.network = net;
-    // this.rack = rack;
-    this.plate = Plate.make(id);
-    this.plugs = stacks.Storage.make();
-    // this.adapters = stacks.Storage.make();
-    // this.plugPoints = stacks.Storage.make();
-    // this.platePoints = stacks.Storage.make();
-
-    this.callWith = this.$bind(function(fx){
-      if(stacks.valids.isFunction(fx)) fx.call(this);
-    });
-
-    //added plate bindings
-    this.plate.hookProxy(this);
-  },
-  share: function(compose){
-    if(!Compose.isInstance(compose)) return;
-    this.plate.share(compose.plate);
-  },
-  unshare: function(compose){
-    if(!Compose.isInstance(compose)) return;
-    this.plate.unshare(compose.plate);
-  },
-  use: function(plug,gid){
-    stacks.Asserted(Plug.isInstance(plug),'first argument is required to be a plug instance');
-    if(!this.plugs.has(gid || plug.GUUID)){
-      this.plugs.add(gid || plug.GUUID,plug);
-      plug.gid = gid;
-      plug.attachPlate(this.plate);
-    }
-    return this;
-  },
-  get: function(gid){
-    stacks.Asserted(stacks.valids.isString(gid),'argument is the unique alias for this plug');
-    return this.plugs.Q(gid);
-  },
-  remove: function(gid){
-    if(!this.has(gid)) return;
-    var pl = this.get(gid);
-    pl.release();
-    return pl;
-  },
-  destroy: function(gid){
-    var f = this.remove(gid);
-    if(f) f.close();
-    return f;
-  },
-  has: function(id){
-    return this.plugs.has(id);
-  },
-});
-
 var Adapters = exports.Adapters = function(){
   var dist = stacks.Distributors();
   var mux = stacks.Middleware(_.funcs.bind(_.funcs.bind(dist.distribute,dist)));
@@ -959,87 +914,6 @@ var Mutators = exports.Mutators = function(fx){
     }
   }
 };
-
-var Network = exports.Network = stacks.Configurable.extends({
-  init: function(id,rack,fn){
-    stacks.Asserted(stacks.valids.isString(id),'an "id" of string type is required ');
-    this.$super();
-    this.id = id;
-    // this.inBus = SelectedChannel.make(_.funcs.always(true));
-    // this.outBus = SelectedChannel.make(_.funcs.always(true));
-    this.composed = Store.make('Compose::Network');
-    this.proxy = stacks.Proxy(function(){ return true; });
-    this.channel = SelectedChannel.make(this.proxy.proxy);
-    this.callWith = this.$bind(function(fx){
-      if(stacks.valids.isFunction(fx)) fx.call(this);
-    });
-
-    this.dispatch = this.$bind(function(f){
-      this.channel.emit(f);
-    });
-
-    this.channel.condition(function(e){
-      if(Packets.isExtra(e)) return true;
-      return false;
-    });
-
-    var callable = stacks.valids.isFunction(rack) ? rack : fn;
-
-    this.rack = (callable !== rack && RackSpace.isInstance(rack) ? rack : RackSpace.make('Rack::Network'));
-
-    this.callWith(callable);
-  },
-  use: function(addr,id){
-    stacks.Asserted(!this.has(id),stacks.Util.String(' ',id,'already attached!'));
-    var cr = this.Resource.apply(this.rack,arguments);
-    if(cr){
-      this.composed.add(id,cr);
-      cr.bindChannel(this.channel);
-    }
-    return cr;
-  },
-  iTask:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.iTask(id,body,this.GUUID);
-    self.dispatch(mesg);
-    return mesg;
-  },
-  iReply:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.iReply(id,body,this.GUUID);
-    self.dispatch(mesg);
-    return mesg;
-  },
-  crate: function(f){
-    if(stacks.valids.isString(f)) return this.rack.new.apply(this.rack,arguments);
-    return this.rack.rack.apply(this.rack,arguments);
-  },
-  uncrate: function(){ return this.rack.unrack.apply(this.rack,arguments); },
-  hasCrate: function(){ return this.rack.has.apply(this.rack,arguments); },
-  get: function(id){
-    return this.composed.get(id);
-  },
-  remove: function(id){
-    var c = this.composed.remove(id);
-    if(Compose.isType(c)) c.unbindChannel(this.channel);
-    return c;
-  },
-  has: function(comp){
-    if(Compose.isInstance(comp) && comp._nid){
-      this.composed.has(comp._nid);
-    }
-    return this.composed.has(comp);
-  },
-  getResource: function(){
-    var cr = this.rack.getResource.apply(this.rack,arguments);
-    return cr;
-  },
-  Resource: function(){
-    return this.resource.apply(this,arguments);
-  }
-});
 
 var RackSpace = exports.RackSpace = stacks.Configurable.extends({
   init: function(id){
@@ -1113,7 +987,6 @@ var Rack = exports.Rack = stacks.Configurable.extends({
     stacks.Asserted(stacks.valids.isString(id),'an "id" of string type is required ');
     this.$super();
     this.id = id;
-    this.composed = ComposeStore.make("Composers");
     this.adapters = AdapterStore.make("plugs");
     this.plugs = PlugStore.make("plugs");
     this.plugPoints = Store.make("plugPoints",stacks.funcs.identity);
@@ -1143,9 +1016,6 @@ var Rack = exports.Rack = stacks.Configurable.extends({
       case 'mutator':
         res = this.Mutator.apply(this,args);
         break;
-      case 'compose':
-        res = this.Compose.apply(this,args);
-        break;
     }
 
     return res;
@@ -1174,15 +1044,9 @@ var Rack = exports.Rack = stacks.Configurable.extends({
       case 'mutator':
         res = this.getMutator.apply(this,args);
         break;
-      case 'compose':
-        res = this.getCompose.apply(this,args);
-        break;
     }
 
     return res;
-  },
-  hasCompose: function(id){
-    return this.composed.has(id);
   },
   hasPlug: function(id){
     return this.plugs.has(id);
@@ -1209,13 +1073,10 @@ var Rack = exports.Rack = stacks.Configurable.extends({
     return this.mutators.Q.apply(this.mutators,arguments);
   },
   PlugPoint: function(id){
-    return this.plugPoint.Q.apply(this.plugPoint,arguments);
+    return this.plugPoints.Q.apply(this.plugPoints,arguments);
   },
   PlatePoint: function(id){
-    return this.platePoint.Q.apply(this.platePoint,arguments);
-  },
-  Compose: function(id,com){
-    return this.composed.Q.apply(this.composed,arguments);
+    return this.platePoints.Q.apply(this.platePoints,arguments);
   },
   getPlug: function(id){
     return this.plugs.get.apply(this.plugs,arguments);
@@ -1227,13 +1088,10 @@ var Rack = exports.Rack = stacks.Configurable.extends({
     return this.mutators.get.apply(this.mutators,arguments);
   },
   getPlugPoint: function(id){
-    return this.plugPoint.get.apply(this.plugPoint,arguments);
+    return this.plugPoints.get.apply(this.plugPoints,arguments);
   },
   getPlatePoint: function(id){
-    return this.platePoint.get.apply(this.platePoint,arguments);
-  },
-  getCompose: function(id,com){
-    return this.composed.get.apply(this.composed,arguments);
+    return this.platePoints.get.apply(this.platePoints,arguments);
   },
   registerPlug: function(){
     return this.plugs.register.apply(this.plugs,arguments);
@@ -1244,9 +1102,6 @@ var Rack = exports.Rack = stacks.Configurable.extends({
   registerPlatePoint: function(){
     return this.platePoints.register.apply(this.platePoints,arguments);
   },
-  registerCompose: function(){
-    return this.composed.register.apply(this.composed,arguments);
-  },
   registerAdapter: function(){
     return this.adapters.register.apply(this.adapters,arguments);
   },
@@ -1254,3 +1109,47 @@ var Rack = exports.Rack = stacks.Configurable.extends({
     return this.mutators.register(id,Mutators(fn));
   },
 });
+
+var Network = exports.Network = stacks.Configurable.extends({
+  init: function(id,rs,fn){
+    if(stacks.valids.exists(rs) && stacks.valids.not.Function(rs)){
+      stacks.Asserted(RackSpace.isInstance(rs),'supply a rackspace instance as second argument');
+    }
+    this.$super();
+    this.id = id;
+    this.rs = rs;
+    this.plate = Plate.make(id);
+    this.plugs = stacks.Storage.make();
+
+    this.plate.hookProxy(this);
+
+    this.$rack(rs || fn);
+  },
+  use: function(plug,gid){
+    stacks.Asserted(Plug.isInstance(plug),'first argument is required to be a plug instance');
+    if(!this.plugs.has(gid || plug.GUUID)){
+      this.plugs.add(gid || plug.GUUID,plug);
+      plug.gid = gid;
+      plug.attachPlate(this.plate);
+    }
+    return this;
+  },
+  get: function(gid){
+    stacks.Asserted(stacks.valids.isString(gid),'argument is the unique alias for this plug');
+    return this.plugs.Q(gid);
+  },
+  remove: function(gid){
+    if(!this.has(gid)) return;
+    var pl = this.get(gid);
+    pl.release();
+    return pl;
+  },
+  destroy: function(gid){
+    var f = this.remove(gid);
+    if(f) f.close();
+    return f;
+  },
+  has: function(id){
+    return this.plugs.has(id);
+  },
+})
