@@ -117,7 +117,7 @@ Packets.Reply = function(id,body,priv){
 };
 
 Packets.ReplyFrom = function(Tp,body,priv){
-  stack.Asserted(Packets.isTask(Tp),'first argument must be a task object');
+  stacks.Asserted(Packets.isTask(Tp),'first argument must be a task object');
   var rp = Packets.Reply(Tp.uuid,body,priv);
   rp.taskMeta = { b: Tp.body, message: Tp.message};
   return rp;
@@ -498,7 +498,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     return mesg;
   },
   ReplyFrom: function(t,body){
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
     stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
     var self = this, mesg = Packets.ReplyFrom(t,body,this.GUUID);
     self.dispatchReply(mesg);
@@ -621,7 +620,6 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     return mesg;
   },
   ReplyFrom: function(t,body){
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
     stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
     var self = this, mesg = Packets.ReplyFrom(t,body,this.GUUID);
     self.dispatchReply(mesg);
@@ -760,7 +758,6 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     });
 
     this.secure('ReplyFrom',function(n,b){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
       var t = Packets.ReplyFrom(n,b);
       stm.emit(f);
@@ -780,7 +777,6 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     });
 
     this.secure('srcReplyFrom',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
       return src.ReplyFrom(n,b,f);
     });
@@ -840,7 +836,6 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
 
     this.secure('ReplyFrom',function(n,b){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
       var t = Packets.ReplyFrom(n,b);
       stm.emit(f);
@@ -860,7 +855,6 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
 
     this.secure('srcReplyFrom',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
       return src.ReplyFrom(n,b,f);
     });
