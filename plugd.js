@@ -78,9 +78,9 @@ var Packets = exports.Packets = function(id,tag,body,private){
   shell.uuid = stacks.Util.guid();
   shell.toString = function(){ return [this.message,this.body].join(':'); };
 
-  if(shell.body && stacks.valids.not.exists(shell.body.chUID)){
-    shell.body.chUID = stacks.Util.guid();
-  }
+  // if(shell.body && stacks.valids.not.exists(shell.body.chUID)){
+  //   shell.body.chUID = stacks.Util.guid();
+  // }
   return shell;
 };
 
@@ -116,16 +116,11 @@ Packets.Reply = function(id,body,priv){
   return p;
 };
 
-Packets.iTask = function(id,body,priv){
-  var p = Packets(id,tasks,body,priv);
-  p.level = extrapack;
-  return p;
-};
-
-Packets.iReply = function(id,body,priv){
-  var p = Packets(id,replies,body,priv);
-  p.level = extrapack;
-  return p;
+Packets.ReplyFrom = function(Tp,body,priv){
+  stack.Asserted(Packets.isTask(Tp),'first argument must be a task object');
+  var rp = Packets.Reply(Tp.uuid,body,priv);
+  rp.taskMeta = { b: Tp.body, message: Tp.message};
+  return rp;
 };
 
 var Store = exports.Store = stacks.FunctionStore.extends({
@@ -267,8 +262,8 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.channel = TaskChannel.make(id);
     this.replyChannel = ReplyChannel.make(stacks.funcs.always(true));
 
-    this.channel.pause();
-    this.replyChannel.pause();
+    // this.channel.pause();
+    // this.replyChannel.pause();
 
     this.configs.add('id',id);
     this.configs.add('gid',gid);
@@ -287,8 +282,8 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     });
 
     this.after('boot',this.$bind(function(){
-      this.channel.resume();
-      this.replyChannel.resume();
+      // this.channel.resume();
+      // this.replyChannel.resume();
     }));
 
     this.isAttached = this.$closure(function(){
@@ -305,7 +300,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       bindrs = this.replyChannel.stream(pl.channel);
       plate = pl;
       this.emit('attachPlate',pl);
-      this.boot();
+      // this.boot();
     });
 
     this.detachPlate = this.$closure(function(){
@@ -502,6 +497,13 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     self.dispatchReply(mesg);
     return mesg;
   },
+  ReplyFrom: function(t,body){
+    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
+    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
+    var self = this, mesg = Packets.ReplyFrom(t,body,this.GUUID);
+    self.dispatchReply(mesg);
+    return mesg;
+  }
 });
 
 var Plate = exports.Plate = stacks.Configurable.extends({
@@ -558,6 +560,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
   hookProxy: function(c){
     c.Task = stacks.funcs.bind(this.Task,this);
     c.Reply = stacks.funcs.bind(this.Reply,this);
+    c.ReplyFrom = stacks.funcs.bind(this.ReplyFrom,this);
     c.watch = stacks.funcs.bind(this.watch,this);
     c.makeName = stacks.funcs.bind(this.makeName,this);
     c.switchFilter = stacks.funcs.bind(this.switchFilter,this);
@@ -615,6 +618,13 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
     var self = this, mesg = Packets.Reply(id,body,this.GUUID);
     self.dispatch(mesg);
+    return mesg;
+  },
+  ReplyFrom: function(t,body){
+    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
+    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
+    var self = this, mesg = Packets.ReplyFrom(t,body,this.GUUID);
+    self.dispatchReply(mesg);
     return mesg;
   },
   watch: function(uuid){
@@ -749,16 +759,12 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
       return t;
     });
 
-    this.secure('iTask',function(n,b,f){
+    this.secure('ReplyFrom',function(n,b){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.iTask(n,b,f);
-    });
-
-    this.secure('iReply',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.iReply(n,b,f);
+      var t = Packets.ReplyFrom(n,b);
+      stm.emit(f);
+      return t;
     });
 
     this.secure('srcTask',function(n,b,f){
@@ -771,6 +777,12 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
       return src.Reply(n,b,f);
+    });
+
+    this.secure('srcReplyFrom',function(n,b,f){
+      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
+      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
+      return src.ReplyFrom(n,b,f);
     });
 
     this.secure('tap',function(fn,name){
@@ -827,16 +839,12 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
       return t;
     });
 
-    this.secure('iTask',function(n,b,f){
+    this.secure('ReplyFrom',function(n,b){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.iTask(n,b,f);
-    });
-
-    this.secure('iReply',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.iReply(n,b,f);
+      var t = Packets.ReplyFrom(n,b);
+      stm.emit(f);
+      return t;
     });
 
     this.secure('srcTask',function(n,b,f){
@@ -849,6 +857,12 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
       stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
       stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
       return src.Reply(n,b,f);
+    });
+
+    this.secure('srcReplyFrom',function(n,b,f){
+      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
+      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
+      return src.ReplyFrom(n,b,f);
     });
 
     this.secure('mux',function(fn){
