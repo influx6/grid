@@ -44,43 +44,75 @@ var Packets = exports.Packets = stacks.Persisto.extends({
     isReply: function(p){
       return TaskPackets.isInstance(p);
     },
-    Task: function(){
-      return TaskPackets.make.apply(TaskPackets,arguments);
-    },
-    Reply: function(){
-      return ReplyPackets.make.apply(ReplyPackets,arguments);
-    }
 }).muxin({});
 
 var TaskPackets = exports.TaskPackets = Packets.extends({},{
-  FromReply: function(p,b,u){
+  From: function(p,b,u){
     if(!Packets.isReply(p)){ return;}
     var pp = TaskPackets.make(p.uuid,b,u);
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
-  Clone: function(p,m){
+  Clone: function(p,m,b){
     if(!Packets.isTask(p)){ return; }
-    var tc = TaskPackets.make(m,p.body,p.uuid);
-    tc.Meta = { m: p.message};
-    p.copy(tc);
+    var tc = TaskPackets.make(m,b || p.body,p.uuid);
+    tc.Meta = { m: p.message, b: p.body };
+    p.link(tc);
     return tc;
+  },
+  Proxy: function(fx){
+    return {
+      make: function(){
+        var f = TaskPackets.make.apply(TaskPackets,arguments);
+        if(stacks.valids.Function(fx)) fx.call(f,f);
+        return f;
+      },
+      clone: function(){
+        var f = TaskPackets.Clone.apply(TaskPackets,arguments);
+        if(stacks.valids.Function(fx)) fx.call(f,f);
+        return f;
+      },
+      from: function(){
+        var f = TaskPackets.From.apply(TaskPackets,arguments);
+        if(stacks.valids.Function(fx)) fx.call(f,f);
+        return f;
+      }
+    };
   }
 });
 
 var ReplyPackets = exports.ReplyPackets = Packets.extends({},{
-  FromTask: function(p,b,u){
+  From: function(p,b,u){
     if(!Packets.isTask(p)){ return;}
     var pp = ReplyPackets.make(p.uuid,b,u);
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
-  Clone: function(p,m){
+  Clone: function(p,m,b){
     if(!Packets.isReply(p)){ return; }
-    var tc = ReplyPackets.make(m,p.body,p.uuid);
-    tc.Meta = { m: p.message };
-    p.copy(tc);
+    var tc = ReplyPackets.make(m,b || p.body,p.uuid);
+    tc.Meta = { m: p.message , b: p.body};
+    p.link(tc);
     return tc;
+  },
+  Proxy: function(fx){
+    return {
+      make: function(){
+        var f = ReplyPackets.make.apply(ReplyPackets,arguments);
+        if(stacks.valids.Function(fx)) fx.call(f,f);
+        return f;
+      },
+      clone: function(){
+        var f = ReplyPackets.Clone.apply(ReplyPackets,arguments);
+        if(stacks.valids.Function(fx)) fx.call(f,f);
+        return f;
+      },
+      from: function(){
+        var f = ReplyPackets.From.apply(ReplyPackets,arguments);
+        if(stacks.valids.Function(fx)) fx.call(f,f);
+        return f;
+      }
+    };
   }
 });
 
@@ -237,6 +269,15 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.pub('attachPlate');
     this.pub('detachPlate');
     this.pub('release');
+
+    var self = this;
+    this.Reply = ReplyPackets.Proxy(function(){
+      self.emit(this);
+    });
+
+    this.Task = TaskPackets.Proxy(function(){
+      self.emit(this);
+    });
 
     this.isAttached = this.$closure(function(){
       return plate != null;
@@ -439,9 +480,10 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.detachAllPoint();
   },
   emit: function (p){
-    if(Packets.isTask(p)) return this.dispatch(p);
-    if(Packets.isReply(p)) return this.dispatchReply(p);
-  }
+    if(Packets.isTask(p)) this.dispatch(p);
+    if(Packets.isReply(p)) this.dispatchReply(p);
+    return p;
+  },
 });
 
 var Plate = exports.Plate = stacks.Configurable.extends({
@@ -461,6 +503,15 @@ var Plate = exports.Plate = stacks.Configurable.extends({
 
     this.pub('boot');
     this.pub('shutdown');
+
+    var self = this;
+    this.Reply = ReplyPackets.Proxy(function(){
+      self.emit(this);
+    });
+
+    this.Task = TaskPackets.Proxy(function(){
+      self.emit(this);
+    });
 
     this.makeName = this.$bind(function(sn){
       if(stacks.valids.not.String(sn)){ return; }
@@ -541,7 +592,8 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     return channel;
   },
   emit: function (p){
-    if(Packets.isPacket(p)) return this.dispatch(p);
+    if(Packets.isPacket(p)) this.dispatch(p);
+    return p;
   },
   emitWatch: function(t){
     if(!Packets.isTask(t)) return;
@@ -638,6 +690,22 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     });
     this.UUID = stacks.Util.guid();
 
+    this.Reply = ReplyPackets.Proxy(function(){
+      stm.emit(n);
+    });
+
+    this.Task = TaskPackets.Proxy(function(){
+      stm.emit(n);
+    });
+
+    this.srcReply = ReplyPackets.Proxy(function(){
+      src.emit(this);
+    });
+
+    this.srcTask = TaskPackets.Proxy(function(){
+      src.emit(this);
+    });
+
     this.secure('close',function(){
       src.replyChannel.off(contractHandle);
       return stm.close();
@@ -659,18 +727,6 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
 
     this.secure('mux',function(fn){
       stm.transformAsync(fn);
-    });
-
-    this.secure('emit',function(n){
-      if(!Packets.isPacket(n)) return;
-      stm.emit(n);
-      return n;
-    });
-
-    this.secure('srcEmit',function(f){
-      if(!Packets.isPacket(f)) return;
-      src.emit(f);
-      return f;
     });
 
     this.secure('tap',function(fn,name){
@@ -711,16 +767,20 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
     this.UUID = stacks.Util.guid();
 
-    this.secure('emit',function(n){
-      if(!Packets.isPacket(n)) return;
+    this.Reply = ReplyPackets.Proxy(function(){
       stm.emit(n);
-      return n;
     });
 
-    this.secure('srcEmit',function(f){
-      if(!Packets.isPacket(f)) return;
-      src.emit(f);
-      return f;
+    this.Task = TaskPackets.Proxy(function(){
+      stm.emit(n);
+    });
+
+    this.srcReply = ReplyPackets.Proxy(function(){
+      src.emit(this);
+    });
+
+    this.srcTask = TaskPackets.Proxy(function(){
+      src.emit(this);
     });
 
     this.secure('mux',function(fn){
@@ -1052,6 +1112,15 @@ var Network = exports.Network = stacks.Configurable.extends({
     this.plugs = stacks.Storage.make();
 
     this.plate.hookProxy(this);
+
+    var self = this;
+    this.Reply = ReplyPackets.Proxy(function(){
+      if(self.emit) self.emit(this);
+    });
+
+    this.Task = TaskPackets.Proxy(function(){
+      if(self.emit) self.emit(this);
+    });
 
     this.$rack(rs || fn);
   },
