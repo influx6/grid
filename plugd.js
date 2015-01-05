@@ -1,127 +1,88 @@
+"use strict";
+
 var stacks = require("stackq");
 var AllTrue = stacks.funcs.always(true);
 var ema = [];
 var PSMeta = { task: true, reply: true};
 var MessagePicker = function(n){ return n['message']; };
 var inNext = function(n,e){ return n(); };
-var tasks = 0x24677B434A323;
-var replies = 0x1874F43FF45;
-var interpack = 0x1844A43CF72;
-var extrapack = 0x2732B4372;
-var packets = 0x1874F43FF45;
 
 
-var PacketSchema = stacks.Schema({},{
-    message: 'string',
-    packets: 'stream',
-    stream: 'function',
-    tag: 'number',
-    level: 'number',
-    uuid: 'string',
-    cid: packets,
-    'origin?':'string',
+var Packets = exports.Packets = stacks.Persisto.extends({
+    init: function(id,body,uuid){
+      stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
+      stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
+      this.$super();
+      this.message = id;
+      this.body = body || {};
+      this.uuid = uuid || stacks.Util.guid();
+
+      var lock = false, plug, plate;
+
+      this.$secure('locked',function(){ return !!lock; });
+
+      this.$secure('lock',function(){ lock = !lock; });
+
+      this.$secure('fromPlug',function(p){
+        if(!Plug.isInstance(p) || plug){ return; }
+        plug = p;
+      });
+
+      this.$secure('fromPlate',function(p){
+        if(!Plate.isInstance(p) || plate){ return; }
+        plate = p;
+      });
+
+    }
   },{
-    uuid:{
-      maxWrite: 1,
+    isPacket: function(p){
+      return Packets.isType(p);
     },
-    origin:{
-      maxWrite: 1,
+    isTask: function(p){
+      return TaskPackets.isInstance(p);
     },
-    stream:{
-      maxWrite: 1,
+    isReply: function(p){
+      return TaskPackets.isInstance(p);
     },
-    packets:{
-      maxWrite: 1,
+    Task: function(){
+      return TaskPackets.make.apply(TaskPackets,arguments);
     },
-    cid:{
-      copy: true,
-    },
-    tag:{
-      maxWrite: 1,
-    },
-    level:{
-      maxWrite: 1,
-    },
-    message:{
-      maxWrite: 1,
-    },
-  },{
-  stream: function(f,fn){
-    return fn(stacks.Persisto.isInstance(f));
+    Reply: function(){
+      return ReplyPackets.make.apply(ReplyPackets,arguments);
+    }
+}).muxin({});
+
+var TaskPackets = exports.TaskPackets = Packets.extends({},{
+  FromReply: function(p,b,u){
+    if(!Packets.isReply(p)){ return;}
+    var pp = TaskPackets.make(p.uuid,b,u);
+    pp.Meta = { m: p.message, b: p.body };
+    return pp;
+  },
+  Clone: function(p,m){
+    if(!Packets.isTask(p)){ return; }
+    var tc = TaskPackets.make(m,p.body,p.uuid);
+    tc.Meta = { m: p.message};
+    p.copy(tc);
+    return tc;
   }
 });
 
-var Packets = exports.Packets = function(id,tag,body,private){
-  var shell = PacketSchema.extends({});
-  // shell.level = intrapack;
-  var locked = false;
-  shell.private = private;
-  shell.tag = tag;
-  shell.message = id;
-  shell.body = body || {};
-
-  /*packet level-function-begin*/
-
-  shell.lock = function(){ locked = true; };
-  shell.locked = function(){ return locked; };
-  shell.packets = stacks.Persisto.make();
-  shell.emit = stacks.funcs.bindByPass(shell.packets.emit,shell.packets);
-  shell.copy = stacks.funcs.bindByPass(shell.packets.copy,shell.packets);
-  shell.link = stacks.funcs.bindByPass(shell.packets.link,shell.packets);
-  shell.flood = stacks.funcs.bindByPass(shell.packets.flood,shell.packets);
-  shell.end = stacks.funcs.bindByPass(shell.packets.end,shell.packets);
-  shell.stream = stacks.funcs.bindByPass(shell.packets.stream,shell.packets);
-  shell.close = stacks.funcs.bindByPass(shell.packets.close,shell.packets);
-
-  /*packet level-function-end*/
-
-  shell.uuid = stacks.Util.guid();
-  shell.toString = function(){ return [this.message,this.body].join(':'); };
-
-  // if(shell.body && stacks.valids.not.exists(shell.body.chUID)){
-  //   shell.body.chUID = stacks.Util.guid();
-  // }
-  return shell;
-};
-
-Packets.isPacket = function(p){
- if(p.cid && p.cid == packets) return true;
- return false;
-};
-
-Packets.isTask = function(p){
- if(Packets.isPacket(p) && p.tag == tasks) return true;
- return false;
-};
-
-Packets.isExtra = function(p){
- if(Packets.isPacket(p) && p.level == extrapack) return true;
- return false;
-};
-
-Packets.isReply = function(p){
- if(Packets.isPacket(p) && p.tag == replies) return true;
- return false;
-};
-
-Packets.Task = function(id,body,priv){
-  var p = Packets(id,tasks,body,priv);
-  p.level = interpack;
-  return p;
-};
-
-Packets.Reply = function(id,body,priv){
-  var p = Packets(id,replies,body,priv);
-  p.level = interpack;
-  return p;
-};
-
-Packets.ReplyFrom = function(Tp,body,priv){
-  stacks.Asserted(Packets.isTask(Tp),'first argument must be a task object');
-  var rp = Packets.Reply(Tp.uuid,body,priv);
-  rp.taskMeta = { b: Tp.body, message: Tp.message};
-  return rp;
-};
+var ReplyPackets = exports.ReplyPackets = Packets.extends({},{
+  FromTask: function(p,b,u){
+    if(!Packets.isTask(p)){ return;}
+    var pp = ReplyPackets.make(p.uuid,b,u);
+    pp.Meta = { m: p.message, b: p.body };
+    return pp;
+  },
+  Clone: function(p,m){
+    if(!Packets.isReply(p)){ return; }
+    var tc = ReplyPackets.make(m,p.body,p.uuid);
+    tc.Meta = { m: p.message };
+    p.copy(tc);
+    return tc;
+  }
+});
 
 var Store = exports.Store = stacks.FunctionStore.extends({
   register: function(){ return this.add.apply(this,arguments); },
@@ -277,15 +238,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.pub('detachPlate');
     this.pub('release');
 
-    this.boot = this.$bind(function(){
-      this.emit('boot',true);
-    });
-
-    this.after('boot',this.$bind(function(){
-      // this.channel.resume();
-      // this.replyChannel.resume();
-    }));
-
     this.isAttached = this.$closure(function(){
       return plate != null;
     });
@@ -314,11 +266,14 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     });
 
     this.$secure('dispatch',function (t) {
-      if(!this.isAttached()) return;
+      if(!this.isAttached() || !Packets.isPacket(t)) return;
+      t.fromPlug(t);
       plate.dispatch(t);
     });
 
     this.$secure('dispatchReply',function (t) {
+      if(!Packets.isPacket(t)) return;
+      t.fromPlug(t);
       this.replyChannel.emit(t);
     });
 
@@ -483,25 +438,9 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.release();
     this.detachAllPoint();
   },
-  Task:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.Task(id,body,this.GUUID);
-    self.dispatch(mesg);
-    return mesg;
-  },
-  Reply:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.Reply(id,body,this.GUUID);
-    self.dispatchReply(mesg);
-    return mesg;
-  },
-  ReplyFrom: function(t,body){
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.ReplyFrom(t,body,this.GUUID);
-    self.dispatchReply(mesg);
-    return mesg;
+  emit: function (p){
+    if(Packets.isTask(p)) return this.dispatch(p);
+    if(Packets.isReply(p)) return this.dispatchReply(p);
   }
 });
 
@@ -523,21 +462,14 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.pub('boot');
     this.pub('shutdown');
 
-    this.boot = this.$bind(function(){
-      this.emit('boot',true);
-    });
-    this.after('boot',this.$bind(function(){
-      this.channel.resume();
-    }));
-
     this.makeName = this.$bind(function(sn){
       if(stacks.valids.not.String(sn)){ return; }
       return [this.id,sn].join('.');
     });
 
     this.$secure('dispatch',function(f){
-      if(Packets.isExtra(f)) return;
-      f.origin = this.GUUID;
+      if(!Packets.isPacket(f)) return;
+      f.fromPlate(this);
       this.channel.emit(f);
     });
   },
@@ -557,13 +489,11 @@ var Plate = exports.Plate = stacks.Configurable.extends({
   },
   tasks: function(){ return this.channel; },
   hookProxy: function(c){
-    c.Task = stacks.funcs.bind(this.Task,this);
-    c.Reply = stacks.funcs.bind(this.Reply,this);
-    c.ReplyFrom = stacks.funcs.bind(this.ReplyFrom,this);
     c.watch = stacks.funcs.bind(this.watch,this);
+    c.emitWatch = stacks.funcs.bind(this.emitWatch,this);
+    c.emit = stacks.funcs.bind(this.emit,this);
     c.makeName = stacks.funcs.bind(this.makeName,this);
-    c.switchFilter = stacks.funcs.bind(this.switchFilter,this);
-    c.boot = stacks.funcs.bind(this.boot,this);
+    c.changeContract = stacks.funcs.bind(this.switchFilter,this);
     c.plugQueue = stacks.funcs.bind(this.plugQueue,this);
     c.tasks = stacks.funcs.bind(this.tasks,this);
     c.dispatch = stacks.funcs.bind(this.dispatch,this);
@@ -605,30 +535,20 @@ var Plate = exports.Plate = stacks.Configurable.extends({
   plugQueue: function(){
     return new PlugQueue(this);
   },
-  Task:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.Task(id,body,this.GUUID);
-    self.dispatch(mesg);
-    return mesg;
-  },
-  Reply:  function (id,body) {
-    stacks.Asserted(stacks.valids.exists(id),"id is required (id)");
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.Reply(id,body,this.GUUID);
-    self.dispatch(mesg);
-    return mesg;
-  },
-  ReplyFrom: function(t,body){
-    stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
-    var self = this, mesg = Packets.ReplyFrom(t,body,this.GUUID);
-    self.dispatchReply(mesg);
-    return mesg;
-  },
-  watch: function(uuid){
-    var channel = new channels.SelectedChannel(uuid, MessagePicker);
+  watch: function(uuid,mp){
+    var channel = new channels.SelectedChannel(uuid,mp);
     this.channel.subscriber = this.channel.stream(channel);
     return channel;
+  },
+  emit: function (p){
+    if(Packets.isPacket(p)) return this.dispatch(p);
+  },
+  emitWatch: function(t){
+    if(!Packets.isTask(t)) return;
+    var mw = this.watch(t.uuid);
+    mw.task = t;
+    this.emit(t);
+    return mw;
   },
 });
 
@@ -741,44 +661,16 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
       stm.transformAsync(fn);
     });
 
-    this.secure('Task',function(n,b){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.Task(n,b);
-      stm.emit(f);
-      return t;
+    this.secure('emit',function(n){
+      if(!Packets.isPacket(n)) return;
+      stm.emit(n);
+      return n;
     });
 
-    this.secure('Reply',function(n,b){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.Reply(n,b);
-      stm.emit(f);
-      return t;
-    });
-
-    this.secure('ReplyFrom',function(n,b){
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.ReplyFrom(n,b);
-      stm.emit(f);
-      return t;
-    });
-
-    this.secure('srcTask',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.Task(n,b,f);
-    });
-
-    this.secure('srcReply',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.Reply(n,b,f);
-    });
-
-    this.secure('srcReplyFrom',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.ReplyFrom(n,b,f);
+    this.secure('srcEmit',function(f){
+      if(!Packets.isPacket(f)) return;
+      src.emit(f);
+      return f;
     });
 
     this.secure('tap',function(fn,name){
@@ -819,44 +711,16 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
     this.UUID = stacks.Util.guid();
 
-    this.secure('Task',function(n,b){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.Task(n,b);
-      stm.emit(f);
-      return t;
+    this.secure('emit',function(n){
+      if(!Packets.isPacket(n)) return;
+      stm.emit(n);
+      return n;
     });
 
-    this.secure('Reply',function(n,b){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.Reply(n,b);
-      stm.emit(f);
-      return t;
-    });
-
-    this.secure('ReplyFrom',function(n,b){
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      var t = Packets.ReplyFrom(n,b);
-      stm.emit(f);
-      return t;
-    });
-
-    this.secure('srcTask',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.Task(n,b,f);
-    });
-
-    this.secure('srcReply',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(n),"id is required (id)");
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.Reply(n,b,f);
-    });
-
-    this.secure('srcReplyFrom',function(n,b,f){
-      stacks.Asserted(stacks.valids.exists(b),"body is required (body)");
-      return src.ReplyFrom(n,b,f);
+    this.secure('srcEmit',function(f){
+      if(!Packets.isPacket(f)) return;
+      src.emit(f);
+      return f;
     });
 
     this.secure('mux',function(fn){
