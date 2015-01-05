@@ -47,20 +47,20 @@ var Packets = exports.Packets = stacks.Persisto.extends({
 }).muxin({});
 
 var TaskPackets = exports.TaskPackets = Packets.extends({},{
-  From: function(p,b,u){
+  from: function(p,b,u){
     if(!Packets.isReply(p)){ return;}
     var pp = TaskPackets.make(p.uuid,b,u);
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
-  Clone: function(p,m,b){
+  clone: function(p,m,b){
     if(!Packets.isTask(p)){ return; }
     var tc = TaskPackets.make(m,b || p.body,p.uuid);
     tc.Meta = { m: p.message, b: p.body };
     p.link(tc);
     return tc;
   },
-  Proxy: function(fx){
+  proxy: function(fx){
     return {
       make: function(){
         var f = TaskPackets.make.apply(TaskPackets,arguments);
@@ -68,12 +68,12 @@ var TaskPackets = exports.TaskPackets = Packets.extends({},{
         return f;
       },
       clone: function(){
-        var f = TaskPackets.Clone.apply(TaskPackets,arguments);
+        var f = TaskPackets.clone.apply(TaskPackets,arguments);
         if(stacks.valids.Function(fx)) fx.call(f,f);
         return f;
       },
       from: function(){
-        var f = TaskPackets.From.apply(TaskPackets,arguments);
+        var f = TaskPackets.from.apply(TaskPackets,arguments);
         if(stacks.valids.Function(fx)) fx.call(f,f);
         return f;
       }
@@ -82,20 +82,20 @@ var TaskPackets = exports.TaskPackets = Packets.extends({},{
 });
 
 var ReplyPackets = exports.ReplyPackets = Packets.extends({},{
-  From: function(p,b,u){
+  from: function(p,b,u){
     if(!Packets.isTask(p)){ return;}
     var pp = ReplyPackets.make(p.uuid,b,u);
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
-  Clone: function(p,m,b){
+  clone: function(p,m,b){
     if(!Packets.isReply(p)){ return; }
     var tc = ReplyPackets.make(m,b || p.body,p.uuid);
     tc.Meta = { m: p.message , b: p.body};
     p.link(tc);
     return tc;
   },
-  Proxy: function(fx){
+  proxy: function(fx){
     return {
       make: function(){
         var f = ReplyPackets.make.apply(ReplyPackets,arguments);
@@ -103,12 +103,12 @@ var ReplyPackets = exports.ReplyPackets = Packets.extends({},{
         return f;
       },
       clone: function(){
-        var f = ReplyPackets.Clone.apply(ReplyPackets,arguments);
+        var f = ReplyPackets.clone.apply(ReplyPackets,arguments);
         if(stacks.valids.Function(fx)) fx.call(f,f);
         return f;
       },
       from: function(){
-        var f = ReplyPackets.From.apply(ReplyPackets,arguments);
+        var f = ReplyPackets.from.apply(ReplyPackets,arguments);
         if(stacks.valids.Function(fx)) fx.call(f,f);
         return f;
       }
@@ -124,7 +124,7 @@ var Store = exports.Store = stacks.FunctionStore.extends({
 var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   init: function(id,picker,fx){
     this.$super(id,picker || MessagePicker);
-    this.lockProxy = stacks.Proxy(function(f,next,end){
+    this.lockproxy = stacks.proxy(function(f,next,end){
       if(!Packets.isPacket(f)) return;
       if(stacks.valids.isFunction(f.locked) && !!f.locked()) return;
       return next();
@@ -137,7 +137,7 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
 
     if(stacks.valids.Function(fx)) fx.call(this);
 
-    this.mutts.add(this.lockProxy.proxy);
+    this.mutts.add(this.lockproxy.proxy);
 
     var bindings = {};
 
@@ -271,11 +271,11 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.pub('release');
 
     var self = this;
-    this.Reply = ReplyPackets.Proxy(function(){
+    this.Reply = ReplyPackets.proxy(function(){
       self.emit(this);
     });
 
-    this.Task = TaskPackets.Proxy(function(){
+    this.Task = TaskPackets.proxy(function(){
       self.emit(this);
     });
 
@@ -494,7 +494,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.configs.add('id',id);
 
     this.points = Store.make('points',stacks.funcs.identity);
-    this.proxy = stacks.Proxy(function(){ return true; });
+    this.proxy = stacks.proxy(function(){ return true; });
     this.channel = SelectedChannel.make(this.proxy.proxy);
 
     this.bindIn = stacks.funcs.bind(this.channel.bindIn,this.channel);
@@ -505,11 +505,11 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.pub('shutdown');
 
     var self = this;
-    this.Reply = ReplyPackets.Proxy(function(){
+    this.Reply = ReplyPackets.proxy(function(){
       self.emit(this);
     });
 
-    this.Task = TaskPackets.Proxy(function(){
+    this.Task = TaskPackets.proxy(function(){
       self.emit(this);
     });
 
@@ -539,7 +539,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     return new Plug(id,gid,fn)
   },
   tasks: function(){ return this.channel; },
-  hookProxy: function(c){
+  hookproxy: function(c){
     c.watch = stacks.funcs.bind(this.watch,this);
     c.emitWatch = stacks.funcs.bind(this.emitWatch,this);
     c.emit = stacks.funcs.bind(this.emit,this);
@@ -690,19 +690,19 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     });
     this.UUID = stacks.Util.guid();
 
-    this.Reply = ReplyPackets.Proxy(function(){
+    this.Reply = ReplyPackets.proxy(function(){
       stm.emit(n);
     });
 
-    this.Task = TaskPackets.Proxy(function(){
+    this.Task = TaskPackets.proxy(function(){
       stm.emit(n);
     });
 
-    this.srcReply = ReplyPackets.Proxy(function(){
+    this.srcReply = ReplyPackets.proxy(function(){
       src.emit(this);
     });
 
-    this.srcTask = TaskPackets.Proxy(function(){
+    this.srcTask = TaskPackets.proxy(function(){
       src.emit(this);
     });
 
@@ -767,19 +767,19 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
     this.UUID = stacks.Util.guid();
 
-    this.Reply = ReplyPackets.Proxy(function(){
+    this.Reply = ReplyPackets.proxy(function(){
       stm.emit(n);
     });
 
-    this.Task = TaskPackets.Proxy(function(){
+    this.Task = TaskPackets.proxy(function(){
       stm.emit(n);
     });
 
-    this.srcReply = ReplyPackets.Proxy(function(){
+    this.srcReply = ReplyPackets.proxy(function(){
       src.emit(this);
     });
 
-    this.srcTask = TaskPackets.Proxy(function(){
+    this.srcTask = TaskPackets.proxy(function(){
       src.emit(this);
     });
 
@@ -1111,14 +1111,14 @@ var Network = exports.Network = stacks.Configurable.extends({
     this.plate = Plate.make(id);
     this.plugs = stacks.Storage.make();
 
-    this.plate.hookProxy(this);
+    this.plate.hookproxy(this);
 
     var self = this;
-    this.Reply = ReplyPackets.Proxy(function(){
+    this.Reply = ReplyPackets.proxy(function(){
       if(self.emit) self.emit(this);
     });
 
-    this.Task = TaskPackets.Proxy(function(){
+    this.Task = TaskPackets.proxy(function(){
       if(self.emit) self.emit(this);
     });
 
