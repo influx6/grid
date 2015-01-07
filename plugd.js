@@ -4,7 +4,9 @@ var stacks = require("stackq");
 var AllTrue = stacks.funcs.always(true);
 var ema = [];
 var PSMeta = { task: true, reply: true};
-var MessagePicker = function(n){ return n['message']; };
+var MessagePicker = function(n){
+  return n['message'];
+};
 var inNext = function(n,e){ return n(); };
 
 
@@ -16,6 +18,7 @@ var Packets = exports.Packets = stacks.Persisto.extends({
       this.message = id;
       this.body = body || {};
       this.uuid = uuid || stacks.Util.guid();
+      this.type = 'packet';
 
       var lock = false, plug, plate;
 
@@ -33,6 +36,17 @@ var Packets = exports.Packets = stacks.Persisto.extends({
         plate = p;
       });
 
+      this.$secure('plug',function(){
+        return plug;
+      });
+
+      this.$secure('plate',function(){
+        return plate;
+      });
+
+    },
+    toString: function(){
+      return [this.message,this.uuid,this.type].join(':');
     }
   },{
     isPacket: function(p){
@@ -46,7 +60,12 @@ var Packets = exports.Packets = stacks.Persisto.extends({
     },
 }).muxin({});
 
-var TaskPackets = exports.TaskPackets = Packets.extends({},{
+var TaskPackets = exports.TaskPackets = Packets.extends({
+    init: function(){
+      this.$super.apply(this,arguments);
+      this.type ='task';
+    }
+  },{
   from: function(p,b,u){
     if(!Packets.isReply(p)){ return;}
     var pp = TaskPackets.make(p.uuid,b,u);
@@ -81,7 +100,12 @@ var TaskPackets = exports.TaskPackets = Packets.extends({},{
   }
 });
 
-var ReplyPackets = exports.ReplyPackets = Packets.extends({},{
+var ReplyPackets = exports.ReplyPackets = Packets.extends({
+    init: function(){
+      this.$super.apply(this,arguments);
+      this.type ='reply';
+    }
+  },{
   from: function(p,b,u){
     if(!Packets.isTask(p)){ return;}
     var pp = ReplyPackets.make(p.uuid,b,u);
@@ -124,7 +148,7 @@ var Store = exports.Store = stacks.FunctionStore.extends({
 var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   init: function(id,picker,fx){
     this.$super(id,picker || MessagePicker);
-    this.lockproxy = stacks.proxy(function(f,next,end){
+    this.lockproxy = stacks.Proxy(function(f,next,end){
       if(!Packets.isPacket(f)) return;
       if(stacks.valids.isFunction(f.locked) && !!f.locked()) return;
       return next();
@@ -272,11 +296,11 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     var self = this;
     this.Reply = ReplyPackets.proxy(function(){
-      self.emit(this);
+      self.emitPacket(this);
     });
 
     this.Task = TaskPackets.proxy(function(){
-      self.emit(this);
+      self.emitPacket(this);
     });
 
     this.isAttached = this.$closure(function(){
@@ -315,6 +339,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.$secure('dispatchReply',function (t) {
       if(!Packets.isPacket(t)) return;
       t.fromPlug(t);
+      console.log('sending reply in plug',t.body,this.id);
       this.replyChannel.emit(t);
     });
 
@@ -479,7 +504,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.release();
     this.detachAllPoint();
   },
-  emit: function (p){
+  emitPacket: function (p){
     if(Packets.isTask(p)) this.dispatch(p);
     if(Packets.isReply(p)) this.dispatchReply(p);
     return p;
@@ -494,7 +519,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.configs.add('id',id);
 
     this.points = Store.make('points',stacks.funcs.identity);
-    this.proxy = stacks.proxy(function(){ return true; });
+    this.proxy = stacks.Proxy(function(){ return true; });
     this.channel = SelectedChannel.make(this.proxy.proxy);
 
     this.bindIn = stacks.funcs.bind(this.channel.bindIn,this.channel);
@@ -506,11 +531,11 @@ var Plate = exports.Plate = stacks.Configurable.extends({
 
     var self = this;
     this.Reply = ReplyPackets.proxy(function(){
-      self.emit(this);
+      self.emitPacket(this);
     });
 
     this.Task = TaskPackets.proxy(function(){
-      self.emit(this);
+      self.emitPacket(this);
     });
 
     this.makeName = this.$bind(function(sn){
@@ -542,7 +567,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
   hookproxy: function(c){
     c.watch = stacks.funcs.bind(this.watch,this);
     c.emitWatch = stacks.funcs.bind(this.emitWatch,this);
-    c.emit = stacks.funcs.bind(this.emit,this);
+    c.emitPacket = stacks.funcs.bind(this.emitPacket,this);
     c.makeName = stacks.funcs.bind(this.makeName,this);
     c.changeContract = stacks.funcs.bind(this.switchFilter,this);
     c.plugQueue = stacks.funcs.bind(this.plugQueue,this);
@@ -591,8 +616,8 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.channel.subscriber = this.channel.stream(channel);
     return channel;
   },
-  emit: function (p){
-    if(Packets.isPacket(p)) this.dispatch(p);
+  emitPacket: function (p){
+    this.dispatch(p);
     return p;
   },
   emitWatch: function(t){
@@ -1111,17 +1136,16 @@ var Network = exports.Network = stacks.Configurable.extends({
     this.plate = Plate.make(id);
     this.plugs = stacks.Storage.make();
 
-    this.plate.hookproxy(this);
-
     var self = this;
     this.Reply = ReplyPackets.proxy(function(){
-      if(self.emit) self.emit(this);
+      self.plate.emitPacket(this);
     });
 
     this.Task = TaskPackets.proxy(function(){
-      if(self.emit) self.emit(this);
+      self.plate.emitPacket(this);
     });
 
+    this.plate.hookproxy(this);
     this.$rack(rs || fn);
   },
   use: function(plug,gid){
