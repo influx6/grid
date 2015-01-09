@@ -148,6 +148,7 @@ var Store = exports.Store = stacks.FunctionStore.extends({
 var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   init: function(id,picker,fx){
     this.$super(id,picker || MessagePicker);
+    this.lockTasks = stacks.Switch();
     this.lockproxy = stacks.Proxy(function(f,next,end){
       if(!Packets.isPacket(f)) return;
       if(stacks.valids.isFunction(f.locked) && !!f.locked()) return;
@@ -195,6 +196,9 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
       });
     });
   },
+  enlock: function(){ this.lockTasks.on(); },
+  dislock: function(){ this.lockTasks.off(); },
+  taskLocking: function(){ return this.lockTasks.isOn(); },
   mutate: function(fn){
     this.mutts.add(fn);
   },
@@ -212,10 +216,10 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
       });
     });
 
-    this.mutts.add(function(f,next,end){
-      f.locked();
+    this.mutts.add(this.bind(function(f,next,end){
+      if(!!this.taskLocking()) f.locked();
       return next();
-    });
+    }));
   }
 });
 
@@ -281,6 +285,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     // this.channel.pause();
     // this.replyChannel.pause();
+    this.channel.enlock();
 
     this.configs.add('id',id);
     this.configs.add('gid',gid);
