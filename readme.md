@@ -1,19 +1,18 @@
 #Plug
- Plug is a [flux](http://facebook.github.io/react/blog/2014/05/06/flux.html) is a simple framework that provides a simpler idea mix on the unidirectional flow of data to create reusable cmponents for task delegation.
+ Plug is a [flux](http://facebook.github.io/react/blog/2014/05/06/flux.html)based framework with differences in certain areas, that provides a simpler mix on the unidirectional flow of data to create reusable components for task delegation.
 
 [NPM Version][npm-url]
 
-Plug is based on flux, it is an idea on evolving the unidirectional data flow into a more flexible,composable paradigm that suits well to a messaging pattern or a task pattern. Plug brings into flux a concept that both allows the generalization of core functionality into atomic units and allows these units to behave in a manner of tasks providers and reply generators, i.e using message tagging,we can build complex systems that depending on the data within the unidirectional stream, will perfom the specified task and generate a reply data if necessary. Plug evolves towards the graphical programming approach which is its final goals.
+Plug is based on flux as a derivative evolution, it is an idea on evolving the unidirectional data flow into a more flexible,composable paradigm that suits well to a messaging pattern or a task pattern. Plug brings into flux a concept that both allows the generalization of core functionality into atomic units and allows these units to behave in a manner of tasks providers and reply generators, i.e using message tagging,we can build complex systems that depending on the data within the unidirectional stream, will perfom the specified task and generate a reply data if necessary. Main plans for Plug is to evolves towards the graphical programming framework of composable systems, which is its final goal.
 
 ##Comparing Plug and Facebook React
- Plug goal is simple and thats the creation of a consistent, api that moves from just the ideas of stores but rather
- asynchronouse and sychronouse job networks,it is an approach to solving the same problem as Flow Based Programming using the flux pattern. But extend that ability to allow natural task streams and natural task reactors that handle those tasks. It allows composition of small atomic unit to create larger ones (i.e compose plugs that do a single task well and combine them into a gigantic network that can perform even more complex task). Plug and Facebook only similarity is on the unidirectional flow of data and the concepts more divergent from that point on.
+ Plug's goal is the creation of a consistent api that moves from just the ideas of stores and actions to job/task networks,it is an approach to solving the same problem as Flow Based Programming but using the flux pattern. But it extends the ability to allow natural task streams and natural task reactors that handle those tasks. It allows composition of small atomic unit to create larger ones (i.e compose plugs that do a single task well and combine them into a gigantic network that can perform even more complex tasks). Plug and Facebook React only similarity is on the unidirectional flow of data and actions, the concepts move more divergent from that point on.
 
 
 ## Tasks and Replies
 
 ### Tasks
-  Tasks are what i called the job packet, because the tell the plugs listening that there is work to be done and in need of a plug capapble of doing that job, usually plugs identify tasks they can handle by a 'String' or 'Regular Expression' or 'Function' passed to them at construction stage and if these tasks match, they then handle
+  Tasks are what we call the job packet, because it tells the plugs listening that there is work to be done and in need of a plug capable of doing that job, usually plugs identify tasks they can handle by a 'String' or 'Regular Expression' or 'Function' passed to them at construction stage and if these tasks match, they then process it.
 
 ## Patterns with Flux
 
@@ -28,13 +27,12 @@ Plug is based on flux, it is an idea on evolving the unidirectional data flow in
 
  * There are plugs(components) that consumes these tasks(actions) and return replies if needed.
  * There is the concept of a network (that is a composition of multiple plugs into one).
- * There is the concept of plates which are the connection points for all plugs in a network,its the unidirection stream of data hook into by all plugs.
- * Optional task locking, that ensures only one plug resolves a tasks incase there are plugs of same task type within the network,these is on by default in all plugs
- * There is the concept of selectedChannels or filterChannels, that will filter in only replies or actions,matching
- specific critierias
+ * There is the concept of plates which are the connection points for all plugs in a network, it's the unidirection stream of data hook into by all plugs.
+ * Optional task locking, that ensures only one plug resolves a task incase there are plugs of same task type within the network,these is on by default in all plugs
+ * There is the concept of selectedChannels or filterChannels, that will filter in only replies/tasks(actions) that match specific critierias
  * Tasks or Replies can contain asychronous streams of data hence each reply or task is a stream in itself
- * Tasks or Replies should contain meta data
- * There is the concept of plugPoints and platePoints which allow attaching a custom end action to plugs with specific replies,it allows patching into a plugs reply stream to perform custom behaviours that don't necessary need to be a Plug themselves, it allows a programmatic patching into plug operations with breaking the ability to create graphical programming development tools with plug and its concepts of operations
+ * Tasks or Replies must contain meta-data
+ * There is the concept of plugPoints which allow attaching a custom end action(function) to plugs with specific replies,it allows patching into a plugs reply stream to perform custom behaviours that don't necessary need to be a Plug themselves, it allows a programmatic patching into plug operations without breaking the simplicity of its approach.
 
 
 ##Installation
@@ -128,7 +126,7 @@ Plug is based on flux, it is an idea on evolving the unidirectional data flow in
     }));
 
     //send it in directly for fun
-    eater.tasks(plug.TasksPackets.make('data.muncher',{ name: 'die' }).emit('totally').emit('not gonna die!'));
+    eater.tasks().emit(plug.TasksPackets.make('data.muncher',{ name: 'die' }).emit('totally').emit('not gonna die!'));
 
   ```
 
@@ -157,7 +155,8 @@ Plug is based on flux, it is an idea on evolving the unidirectional data flow in
 
   ```
 
- All plug identify tasks that they can handle by the task tag/id, if it doesnt match, it doesnt care.
+ All plugs identify their tasks that they can handle by the task tag/id, if it doesnt match, it doesnt care.
+ 
 ## Projects
 
   * [Web.Plug](https://github.com/influx6/web.plug): Provides plugs for server side tasks such as routing and request handling,..etc
