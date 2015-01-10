@@ -1,6 +1,6 @@
 {
   "name": "plugd",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "flux pattern based framework on the mbp-fbp derivative",
   "main": "./plugd.js",
   "scripts": {

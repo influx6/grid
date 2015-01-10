@@ -16,6 +16,7 @@ var Packets = exports.Packets = stacks.Persisto.extends({
       stacks.Asserted(stacks.valids.exists(body),"body is required (body)");
       this.$super();
       this.message = id;
+      this.traces = [];
       this.body = body || {};
       this.uuid = uuid || stacks.Util.guid();
       this.type = 'packet';
@@ -149,11 +150,13 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   init: function(id,picker,fx){
     this.$super(id,picker || MessagePicker);
     this.lockTasks = stacks.Switch();
-    this.lockproxy = stacks.Proxy(function(f,next,end){
+    this.lockproxy = stacks.Proxy(this.$bind(function(f,next,end){
       if(!Packets.isPacket(f)) return;
-      if(stacks.valids.isFunction(f.locked) && !!f.locked()) return;
+      if(this.taskLocking()){
+        if(stacks.valids.isFunction(f.locked) && !!f.locked()) return;
+      }
       return next();
-    });
+    }));
 
     this.mutts.add(function(f,next,end){
       if(!Packets.isPacket(f)) return;
@@ -217,7 +220,7 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
     });
 
     this.mutts.add(this.bind(function(f,next,end){
-      if(!!this.taskLocking()) f.locked();
+      f.lock();
       return next();
     }));
   }
@@ -240,9 +243,30 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     stacks.Asserted(stacks.valids.isString(id),"first argument must be a string");
     var bindings = [],network;
 
+    this.idProxy = stacks.Proxy(this.$bind(function(d,n,e){
+      if(Packets.isPacket(d)){
+        d.traces.push(this.GUUID);
+      }
+      return n();
+    }));
+
     this.points = Store.make('points',stacks.funcs.identity);
     this.internalTasks = Store.make('tasks',stacks.funcs.identity);
     this.internalReplies = Store.make('replies',stacks.funcs.identity);
+
+    this.tweakAllTasks = this.$bind(function(fc){
+      this.internalTasks.each(function(e,i,o,fx){
+        if(stacks.valids.Function(fc)) fc.call(e,e,i);
+        fx(null);
+      },fc)
+    });
+
+    this.tweakAllReplies = this.$bind(function(fc){
+      this.internalReplies.each(function(e,i,o,fx){
+        if(stacks.valids.Function(fc)) fc.call(e,e,i);
+        fx(null);
+      },fc)
+    });
 
     this.pauseAllTasks = this.$bind(function(fc){
       this.internalTasks.each(function(e,i,o,fx){
@@ -282,6 +306,9 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     this.channel = TaskChannel.make(id);
     this.replyChannel = ReplyChannel.make(stacks.funcs.always(true));
+
+    this.channel.mutts(this.idProxy.proxy);
+    this.replyChannel.mutts(this.idProxy.proxy);
 
     // this.channel.pause();
     // this.replyChannel.pause();
