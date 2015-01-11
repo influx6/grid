@@ -57,7 +57,7 @@ var Packets = exports.Packets = stacks.Persisto.extends({
       return TaskPackets.isInstance(p);
     },
     isReply: function(p){
-      return TaskPackets.isInstance(p);
+      return ReplyPackets.isInstance(p);
     },
 }).muxin({});
 
@@ -219,7 +219,7 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
       });
     });
 
-    this.mutts.add(this.bind(function(f,next,end){
+    this.mutate(this.$bind(function(f,next,end){
       f.lock();
       return next();
     }));
@@ -307,8 +307,8 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.channel = TaskChannel.make(id);
     this.replyChannel = ReplyChannel.make(stacks.funcs.always(true));
 
-    this.channel.mutts(this.idProxy.proxy);
-    this.replyChannel.mutts(this.idProxy.proxy);
+    this.channel.mutate(this.idProxy.proxy);
+    this.replyChannel.mutate(this.idProxy.proxy);
 
     // this.channel.pause();
     // this.replyChannel.pause();
@@ -371,7 +371,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.$secure('dispatchReply',function (t) {
       if(!Packets.isPacket(t)) return;
       t.fromPlug(t);
-      console.log('sending reply in plug',t.body,this.id);
       this.replyChannel.emit(t);
     });
 
