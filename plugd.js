@@ -150,6 +150,10 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   init: function(id,picker,fx){
     this.$super(id,picker || MessagePicker);
     this.lockTasks = stacks.Switch();
+    this.taskLockSwitch = stacks.Proxy(this.$bind(function(f,next,end){
+      f.lock();
+      return next();
+    }));
     this.lockproxy = stacks.Proxy(this.$bind(function(f,next,end){
       if(!Packets.isPacket(f)) return;
       if(this.taskLocking()){
@@ -199,6 +203,12 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
       });
     });
   },
+  lockPackets: function(){
+    this.mutts.add(this.taskLockSwitch.proxy);
+  },
+  freePackts: function(){
+    this.mutts.remove(this.taskLockSwitch.proxy);
+  },
   enlock: function(){ this.lockTasks.on(); },
   dislock: function(){ this.lockTasks.off(); },
   taskLocking: function(){ return this.lockTasks.isOn(); },
@@ -217,13 +227,11 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
         if(!Packets.isTask(f)) return;
         return next();
       });
+
     });
 
-    this.mutate(this.$bind(function(f,next,end){
-      f.lock();
-      return next();
-    }));
-  }
+    // this.lockPackets();
+  },
 });
 
 var ReplyChannel = exports.ReplyChannel = SelectedChannel.extends({
@@ -312,6 +320,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     // this.channel.pause();
     // this.replyChannel.pause();
+    // this.channel.lockPackets();
     this.channel.enlock();
 
     this.configs.add('id',id);
@@ -404,6 +413,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
         var br = pl.channel.stream(tk);
         bindings.push(br);
       });
+      tk.enlock();
       return tk;
     });
 
@@ -769,12 +779,12 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
 
     this.secureLock('plug',function(plug){
       if(!Plug.isType(plug)) return;
-      this.stream(plug.channel.packets);
+      this.stream(plug.channel);
     });
 
     this.secureLock('plate',function(plate){
       if(!Plate.isType(plate)) return;
-      this.stream(plate.channel.packets);
+      this.stream(plate.channel);
     });
 
     this.secure('stream',function(sm){
@@ -850,7 +860,7 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
 
     this.secureLock('plate',function(plate){
       if(!Plate.isType(plate)) return;
-      this.stream(plate.channel.packets);
+      this.stream(plate.channel);
     });
 
     this.secure('stream',function(sm){
@@ -1206,4 +1216,50 @@ var Network = exports.Network = stacks.Configurable.extends({
   has: function(id){
     return this.plugs.has(id);
   },
-})
+},{
+  blueprint: function(fx,nt){
+    return stacks.funcs.curry(Network.make,fx);
+  },
+});
+
+var NetworkFlux = exports.NetworkFlux = function(net){
+ stacks.Asserted(Network.isInstance(net),'argument must be an instance of plug.Network');
+  return stacks.Mask(function(fx){
+
+    var pl = net.plate,channel = pl.channel, nets = [],markers = {};
+
+    var filterGenerator = (function(nz){
+      return function(f){
+        if(Packets.isPacket(f) && f.plate() === nz.plate) return;
+        return nz.plate.channel.emit(f);
+      }
+    });
+
+    this.secureLock('filterPackets',filterGenerator(net));
+
+    this.secure('has',function(net){
+      return nets.indexOf(net) !== -1;
+    });
+
+    this.secure('connect',function(rn){
+      if(!Network.isInstance(rn) || this.has(rn)) return;
+      var marker = filterGenerator(rn);
+      pl.channel.on(marker);
+      rn.plate.channel.on(this.filterPackets);
+      nets.push(rn);
+      markers[rn] = marker;
+    });
+
+    this.secure('disconnect',function(rn){
+      if(!Network.isInstance(rn) || !this.has(rn)) return;
+      var marker = markers[rn];
+      pl.channel.off(marker);
+      rn.plate.channel.off(this.filterPackets);
+      nets[nets.indexOf(rn)] = null;
+
+      stacks.enums.deferCleanArray(nets);
+      delete markers[rn];
+    });
+
+  });
+};
