@@ -42,5 +42,9 @@ stacks.Jazz('network specification', function (_){
 
   n.Task.make('woo',{name:'sink'});
   p.Task.make('waa',{name:'suck'});
+  flux.disconnect(p);
+  n.Task.make('woo',{name:'rock'});
+  p.Task.make('waa',{name:'not'});
+
 
 });
