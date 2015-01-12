@@ -28,7 +28,8 @@ Plug is based on flux as a derivative evolution, it is an idea on evolving the u
  * There are plugs(components) that consumes these tasks(actions) and return replies if needed.
  * There is the concept of a network (that is a composition of multiple plugs into one).
  * There is the concept of plates which are the connection points for all plugs in a network, it's the unidirection stream of data hook into by all plugs.
- * Optional task locking, that ensures only one plug resolves a task incase there are plugs of same task type within the network.
+ * Optional task locking,it allows channels watch for locked task,it ensures only one plug resolves a task incase there are plugs of same task type within the network,usually the task is locked after being processed manually.
+ * Optional channel task autolocking,these forces that the first receiver of the task be the first and only user of this task,this is not enabled by default as it may its a bruteforce way of stopping others from using a task
  * There is the concept of selectedChannels or filterChannels, that will filter in only replies/tasks(actions) that match specific critierias
  * Tasks or Replies can contain asychronous streams of data hence each reply or task is a stream in itself
  * Tasks or Replies must contain meta-data

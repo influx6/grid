@@ -150,15 +150,14 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   init: function(id,picker,fx){
     this.$super(id,picker || MessagePicker);
     this.lockTasks = stacks.Switch();
-    this.taskLockSwitch = stacks.Proxy(this.$bind(function(f,next,end){
+    this.lockSwitch = stacks.Proxy(this.$bind(function(f,next,end){
+      if(!Packets.isPacket(f)) return;
       f.lock();
       return next();
     }));
     this.lockproxy = stacks.Proxy(this.$bind(function(f,next,end){
-      if(!Packets.isPacket(f)) return;
-      if(this.taskLocking()){
-        if(stacks.valids.isFunction(f.locked) && !!f.locked()) return;
-      }
+      if(!Packets.isPacket(f)){ return; };
+      if(this.taskLocking() && f.locked()){ return; };
       return next();
     }));
 
@@ -175,6 +174,7 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
 
     this.bindOut = this.$bind(function(chan){
       if(!SelectedChannel.isType(chan) || stacks.valids.contains(bindings,chan.GUUID)) return;
+
       bindings[chan.GUUID] = {
          out: this.stream(chan),
          in: { unstream: function(){}}
@@ -203,11 +203,11 @@ var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
       });
     });
   },
-  lockPackets: function(){
-    this.mutts.add(this.taskLockSwitch.proxy);
+  enableLocking: function(){
+    this.mutate(this.lockSwitch.proxy);
   },
-  freePackts: function(){
-    this.mutts.remove(this.taskLockSwitch.proxy);
+  disableLocking: function(){
+    this.unmutate(this.lockSwitch.proxy);
   },
   enlock: function(){ this.lockTasks.on(); },
   dislock: function(){ this.lockTasks.off(); },
@@ -227,10 +227,9 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
         if(!Packets.isTask(f)) return;
         return next();
       });
-
     });
 
-    // this.lockPackets();
+    // this.enableLocking();
   },
 });
 
@@ -245,11 +244,97 @@ var ReplyChannel = exports.ReplyChannel = SelectedChannel.extends({
   }
 });
 
+var ChannelStore = exports.ChannelStore = stacks.Configurable.extends({
+  init: function(id){
+    this.$super();
+    this.id = id;
+    this.taskStore = Store.make('taskStorage');
+    this.replyStore = Store.make('replyStorage');
+  },
+  task: function(id){
+    return this.taskStore.get(id);
+  },
+  reply: function(id){
+    return this.replyStore.get(id);
+  },
+}).muxin({
+  newTask: function(id,tag,picker){
+    stacks.Asserted(arguments.length  > 0,'please supply the id, tag for the channel');
+    if(arguments.length === 1){
+      stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
+    }
+    if(arguments.length == 1 && stacks.valids.isString(id)){ tag = id; }
+    var task = TaskChannel.make(tag,picker);
+    this.taskStore.add(id,task);
+    return function(fn){
+      if(stacks.valids.Function(fn)) fn.call(task,task);
+      return task;
+    };
+  },
+  newReply: function(id,tag,picker){
+    stacks.Asserted(arguments.length  > 0,'please supply the id, tag for the channel');
+    if(arguments.length === 1){
+      stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
+    }
+    if(arguments.length == 1 && stacks.valids.isString(id)){ tag = id; }
+    var reply = ReplyChannel.make(tag,picker);
+    this.replyStore.add(id,reply);
+    return function(fn){
+      if(stacks.valids.Function(fn)) fn.call(reply,reply);
+      return reply;
+    };
+  },
+  tweakReplies: function(fc,fcc){
+    return this.replyStore.each(function(e,i,o,fx){
+      if(stacks.valids.Function(fc)) fc.call(e,e,i);
+      fx(null);
+    },fcc)
+  },
+  tweakTasks: function(fc,fcc){
+    return this.replyStore.each(function(e,i,o,fx){
+      if(stacks.valids.Function(fc)) fc.call(e,e,i);
+      fx(null);
+    },fcc)
+  },
+  pauseTask: function(id){
+    var t = this.task(id);
+    if(t) t.pause();
+  },
+  resumeTask: function(id){
+    var t = this.task(id);
+    if(t) t.resume();
+  },
+  pauseReply: function(id){
+    var t = this.reply(id);
+    if(t) t.pause();
+  },
+  resumeReply: function(id){
+    var t = this.reply(id);
+    if(t) t.resume();
+  },
+  resumeAllTasks: function(){
+    this.tweakTasks(function resumer(f){ f.resume(); });
+  },
+  pauseAllTasks: function(){
+    this.tweakTasks(function pauser(f){ f.pause(); });
+  },
+  resumeAllReplies: function(){
+    this.tweakReplies(function resumer(f){ f.resume(); });
+  },
+  pauseAllReplies: function(){
+    this.tweakReplies(function pauser(f){ f.pause(); });
+  },
+});
+
 var Plug = exports.Plug = stacks.Configurable.extends({
   init: function(id,gid,fn){
     this.$super();
     stacks.Asserted(stacks.valids.isString(id),"first argument must be a string");
-    var bindings = [],network;
+
+    var self = this,bindings = [],network,plate;
+
+    this.id = id;
+    this.gid = gid;
 
     this.idProxy = stacks.Proxy(this.$bind(function(d,n,e){
       if(Packets.isPacket(d)){
@@ -259,50 +344,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     }));
 
     this.points = Store.make('points',stacks.funcs.identity);
-    this.internalTasks = Store.make('tasks',stacks.funcs.identity);
-    this.internalReplies = Store.make('replies',stacks.funcs.identity);
-
-    this.tweakAllTasks = this.$bind(function(fc){
-      this.internalTasks.each(function(e,i,o,fx){
-        if(stacks.valids.Function(fc)) fc.call(e,e,i);
-        fx(null);
-      },fc)
-    });
-
-    this.tweakAllReplies = this.$bind(function(fc){
-      this.internalReplies.each(function(e,i,o,fx){
-        if(stacks.valids.Function(fc)) fc.call(e,e,i);
-        fx(null);
-      },fc)
-    });
-
-    this.pauseAllTasks = this.$bind(function(fc){
-      this.internalTasks.each(function(e,i,o,fx){
-        if(stacks.valids.Function(e.pause)) e.pause();
-        fx(null);
-      },fc)
-    });
-    this.pauseAllReplies = this.$bind(function(fc){
-      this.internalReplies.each(function(e,i,o,fx){
-        if(stacks.valids.Function(e.pause)) e.pause();
-        fx(null);
-      },fc)
-    });
-    this.resumeAllTasks = this.$bind(function(fc){
-      this.internalTasks.each(function(e,i,o,fx){
-        if(stacks.valids.Function(e.pause)) e.resume();
-        fx(null);
-      },fc)
-    });
-    this.resumeAllReplies = this.$bind(function(fc){
-      this.internalReplies.each(function(e,i,o,fx){
-        if(stacks.valids.Function(e.pause)) e.resume();
-        fx(null);
-      },fc)
-    });
-
-    this.id = id;
-    this.gid = gid;
+    this.channelStore = ChannelStore.make(this.gid || this.id);
 
     this.makeName = this.$bind(function(sn){
       if(stacks.valids.not.String(sn)){ return; }
@@ -312,21 +354,8 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       return [m,sn].join('.');
     });
 
-    this.channel = TaskChannel.make(id);
-    this.replyChannel = ReplyChannel.make(stacks.funcs.always(true));
-
-    this.channel.mutate(this.idProxy.proxy);
-    this.replyChannel.mutate(this.idProxy.proxy);
-
-    // this.channel.pause();
-    // this.replyChannel.pause();
-    // this.channel.lockPackets();
-    this.channel.enlock();
-
     this.configs.add('id',id);
     this.configs.add('gid',gid);
-
-    var plate = null,bind,bindrs;
 
     this.pub('boot');
     this.pub('networkAttached');
@@ -335,11 +364,9 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.pub('detachPlate');
     this.pub('release');
 
-    var self = this;
     this.Reply = ReplyPackets.proxy(function(){
       self.emitPacket(this);
     });
-
     this.Task = TaskPackets.proxy(function(){
       self.emitPacket(this);
     });
@@ -354,21 +381,14 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     this.attachPlate = this.$closure(function(pl){
       if(this.isAttached() || !Plate.isInstance(pl)) return;
-      bind = pl.channel.stream(this.channel);
-      bindrs = this.replyChannel.stream(pl.channel);
       plate = pl;
       this.emit('attachPlate',pl);
-      // this.boot();
     });
 
     this.detachPlate = this.$closure(function(){
       this.emit('detachPlate',plate);
-      if(this.isAttached()){
-        bind.unstream();
-        bindrs.unstream();
-      }
-      plate = bind = null;
       this.destoryBindings();
+      plate = null;
     });
 
     this.$secure('dispatch',function (t) {
@@ -401,35 +421,25 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       });
     });
 
-    this.newTaskChannel= this.$bind(function(id,tag,picker){
-      stacks.Asserted(arguments.length  > 0,'please supply the id, tag for the channel');
-      if(arguments.length === 1)
-        stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
-      if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
-      stacks.Asserted(!this.internalTasks.has(id),'id "'+id+'" is already in use');
-      var tk = TaskChannel.make(tag,picker);
-      this.internalTasks.add(id,tk);
-      this.afterPlate(function(pl){
-        var br = pl.channel.stream(tk);
-        bindings.push(br);
-      });
-      tk.enlock();
-      return tk;
+    this.newTask = this.$bind(function(id,tag,picker){
+      return this.channelStore.newTask(id,tag,picker)(this.$bind(function(tk){
+        this.afterPlate(function(pl){
+          var br = pl.channel.stream(tk);
+          bindings.push(br);
+          tk.mutate(this.idProxy.proxy);
+          tk.enlock();
+        });
+      }));
     });
 
-    this.newReplyChannel= this.$bind(function(id,tag,picker){
-      stacks.Asserted(arguments.length >  0,'please supply the id, tag for the channel');
-      if(arguments.length === 1)
-        stacks.Asserted(stacks.valids.isString(id),'key for the channel must be a string')
-      if(arguments.length == 1 && stacks.valids.isString(id)) tag = id;
-      stacks.Asserted(!this.internalReplies.has(id),'id "'+id+'" is already in use');
-      var tk = ReplyChannel.make(tag,picker);
-      this.internalReplies.add(id,tk);
-      this.afterPlate(function(pl){
-        var br = tk.stream(pl.channel)
-        bindings.push(br);
-      });
-      return tk;
+    this.newReply = this.$bind(function(id,tag,picker){
+      return this.channelStore.newReply(id,tag,picker)(this.$bind(function(tk){
+        this.afterPlate(function(pl){
+          var br = tk.stream(pl.channel);
+          bindings.push(br);
+          tk.mutate(this.idProxy.proxy);
+        });
+      }));
     });
 
     this.attachNetwork = this.$bind(function(net){
@@ -487,18 +497,25 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       return network;
     });
 
+    //instance variables
+    this.channel = this.newTask('core',this.id);
+    this.replyChannel = this.newReply('core',stacks.funcs.always(true));
+
+    // this.channel.enableLocking();
+    this.channel.enlock();
+
     this.$rack(fn);
   },
   changeContract: function(n){
     this.channel.changeContract(n);
   },
   replies: function(f){
-    if(f) return this.internalReplies.get(f);
-    return this.replyChannel;
+    f = stacks.valids.isString(f) ? f : 'core';
+    return this.channelStore.reply(f);
   },
   tasks: function(f){
-    if(f) return this.internalTasks.get(f);
-    return this.channel;
+    f = stacks.valids.isString(f) ? f : 'core';
+    return this.channelStore.task(f);
   },
   point: function(alias){
     return this.points.Q(alias);
@@ -1168,6 +1185,7 @@ var Rack = exports.Rack = stacks.Configurable.extends({
 
 var Network = exports.Network = stacks.Configurable.extends({
   init: function(id,rs,fn){
+    stacks.Asserted(stacks.valids.isString(id),'a string must be supplied as network id');
     if(stacks.valids.exists(rs) && stacks.valids.not.Function(rs)){
       stacks.Asserted(RackSpace.isInstance(rs),'supply a rackspace instance as second argument');
     }
@@ -1181,9 +1199,13 @@ var Network = exports.Network = stacks.Configurable.extends({
     this.Reply = ReplyPackets.proxy(function(){
       self.plate.emitPacket(this);
     });
-
     this.Task = TaskPackets.proxy(function(){
       self.plate.emitPacket(this);
+    });
+
+    this.$secure('imprint',function(net){
+      if(!Network.isType(net)) return;
+      return fn.call(net);
     });
 
     this.plate.hookproxy(this);
@@ -1218,7 +1240,13 @@ var Network = exports.Network = stacks.Configurable.extends({
   },
 },{
   blueprint: function(fx,nt){
-    return stacks.funcs.curry(Network.make,fx);
+    var print =  stacks.funcs.curry(Network.make,fx);
+    print.imprint = stacks.funcs.bind(function(net){
+      if(!Network.isType(net)) return;
+      var res = fx.call(net);
+      return stacks.valids.exists(res) ? res : net;
+    },print)
+    return print;
   },
 });
 
