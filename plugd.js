@@ -432,6 +432,17 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       }));
     });
 
+    this.newSrcReply = this.$bind(function(id,tag,picker){
+      return this.channelStore.newReply(id,tag,picker)(this.$bind(function(tk){
+        this.afterPlate(function(pl){
+          var br = pl.channel.stream(tk);
+          // var br = tk.stream(pl.channel);
+          bindings.push(br);
+          tk.mutate(this.idProxy.proxy);
+        });
+      }));
+    });
+
     this.newReply = this.$bind(function(id,tag,picker){
       return this.channelStore.newReply(id,tag,picker)(this.$bind(function(tk){
         this.afterPlate(function(pl){
@@ -782,11 +793,11 @@ var PlugPoint = exports.PlugPoint = function(fx,filter,picker){
     });
 
     this.srcReply = ReplyPackets.proxy(function(){
-      src.emit(this);
+      src.emitPacket(this);
     });
 
     this.srcTask = TaskPackets.proxy(function(){
-      src.emit(this);
+      src.emitPacket(this);
     });
 
     this.secure('close',function(){
@@ -859,11 +870,11 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
     });
 
     this.srcReply = ReplyPackets.proxy(function(){
-      src.emit(this);
+      src.emitPacket(this);
     });
 
     this.srcTask = TaskPackets.proxy(function(){
-      src.emit(this);
+      src.emitPacket(this);
     });
 
     this.secure('mux',function(fn){
@@ -926,7 +937,7 @@ var Adapters = exports.Adapters = function(){
   var fx = _.funcs.bind(mux.emit,mux);
   var apt = { mux: mux, rack: dist, };
 
-  stacks.funcs.selfReturn(apt,'from',function(){
+  stacks.funcs.selfReturn(apt,'from',function(chan){
     stacks.Asserted(SelectedChannel.isType(chan),'argument must be a channel instance');
     this.channel = chan;
     this.channel.on(fx);
@@ -937,19 +948,19 @@ var Adapters = exports.Adapters = function(){
     this.channel = null;
   });
 
-  stacks.funcs.selfReturn(apt,'muxate',function(fx){
-    mux.add(fx);
+  stacks.funcs.selfReturn(apt,'muxate',function(fn){
+    mux.add(fn);
   });
 
-  stacks.funcs.selfReturn(apt,'out',function(){
+  stacks.funcs.selfReturn(apt,'out',function(fn){
     dist.add(fn);
   });
 
-  stacks.funcs.selfReturn(apt,'outOnce',function(){
+  stacks.funcs.selfReturn(apt,'outOnce',function(fn){
     dist.addOnce(fn);
   });
 
-  stacks.funcs.selfReturn(apt,'unOut',function(){
+  stacks.funcs.selfReturn(apt,'unOut',function(fn){
     dist.remove(fn);
   });
 
