@@ -67,9 +67,9 @@ var TaskPackets = exports.TaskPackets = Packets.extends({
       this.type ='task';
     }
   },{
-  from: function(p,b,u,m){
+  from: function(p,m,b,u){
     if(!Packets.isReply(p)){ return;}
-    var pp = TaskPackets.make(m || p.uuid,b,u);
+    var pp = TaskPackets.make(m || p.message,b || p.body,u || p.uuid);
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
@@ -109,7 +109,7 @@ var ReplyPackets = exports.ReplyPackets = Packets.extends({
   },{
   from: function(p,b,u,m){
     if(!Packets.isTask(p)){ return;}
-    var pp = ReplyPackets.make(m || p.uuid,b,u);
+    var pp = ReplyPackets.make(m || p.uuid,b || p.body,u);
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
