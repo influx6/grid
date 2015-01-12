@@ -327,14 +327,17 @@ var ChannelStore = exports.ChannelStore = stacks.Configurable.extends({
 });
 
 var Plug = exports.Plug = stacks.Configurable.extends({
-  init: function(id,gid,fn){
+  init: function(mapper,fn){
     this.$super();
-    stacks.Asserted(stacks.valids.isString(id),"first argument must be a string");
+    if(stacks.valids.isString(mapper)){
+      this.config({id: mapper});
+    }else{
+      stacks.Asserted(stacks.valids.isObject(mapper),"first arg must be a map with 'id' eg {id:..}");
+    }
 
     var self = this,bindings = [],network,plate;
-
-    this.id = id;
-    this.gid = gid;
+    this.id = this.getConfigAttr('id');
+    this.gid = this.getConfigAttr('gid') || this.id;
 
     this.idProxy = stacks.Proxy(this.$bind(function(d,n,e){
       if(Packets.isPacket(d)){
@@ -353,9 +356,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       else m = this.gid;
       return [m,sn].join('.');
     });
-
-    this.configs.add('id',id);
-    this.configs.add('gid',gid);
 
     this.pub('boot');
     this.pub('networkAttached');
@@ -960,6 +960,7 @@ var Mutators = exports.Mutators = function(fx){
   var channels = [], freed = [];
   return {
     bind: function(chan){
+      if(stacks.valids.not.exists(chan)) return;
       if(this.has(chan)) return;
       chan.mutate(fx);
       var free = freed.pop();
@@ -967,6 +968,7 @@ var Mutators = exports.Mutators = function(fx){
       else channels.push(chan);
     },
     unbind: function(chan){
+      if(stacks.valids.not.exists(chan)) return;
       if(!this.has(chan)) return;
       chan.unmutate(fx);
       var ind = this.index(chan);
