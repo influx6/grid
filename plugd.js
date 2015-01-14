@@ -330,12 +330,16 @@ var Plug = exports.Plug = stacks.Configurable.extends({
   init: function(mapper,fn){
     this.$super();
     if(stacks.valids.isString(mapper)){
-      this.config({id: mapper});
+      this.config({id: mapper, filter: mapper});
     }else{
-      stacks.Asserted(stacks.valids.isObject(mapper),"first arg must be a map with 'id' eg {id:..}");
+      stacks.Asserted(stacks.valids.isObject(mapper),"first arg must be a map with 'id'"
+      +" eg {id:..,filter: ..}");
+      stacks.Asserted(stacks.valids.contains(mapper,'filter') || stacks.valids.contains(mapper,'id')," the map must contain either an id or filter key attribute");
     }
 
     var self = this,bindings = [],network,plate;
+    var filter = this.getConfigAttr('filter');
+
     this.id = this.getConfigAttr('id');
     this.gid = this.getConfigAttr('gid') || this.id;
 
@@ -509,7 +513,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     });
 
     //instance variables
-    this.channel = this.newTask('core',this.id);
+    this.channel = this.newTask('core',filter || this.id);
     this.replyChannel = this.newReply('core',stacks.funcs.always(true));
 
     // this.channel.enableLocking();
