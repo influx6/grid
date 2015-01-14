@@ -73,9 +73,9 @@ var TaskPackets = exports.TaskPackets = Packets.extends({
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
-  clone: function(p,m,b){
+  clone: function(p,m,b,u){
     if(!Packets.isTask(p)){ return; }
-    var tc = TaskPackets.make(m,b || p.body,p.uuid);
+    var tc = TaskPackets.make(m,b || p.body,u || p.uuid);
     tc.Meta = { m: p.message, b: p.body };
     p.link(tc);
     return tc;
@@ -113,9 +113,9 @@ var ReplyPackets = exports.ReplyPackets = Packets.extends({
     pp.Meta = { m: p.message, b: p.body };
     return pp;
   },
-  clone: function(p,m,b){
+  clone: function(p,m,b,u){
     if(!Packets.isReply(p)){ return; }
-    var tc = ReplyPackets.make(m,b || p.body,p.uuid);
+    var tc = ReplyPackets.make(m,b || p.body,u || p.uuid);
     tc.Meta = { m: p.message , b: p.body};
     p.link(tc);
     return tc;
