@@ -141,10 +141,7 @@ var ReplyPackets = exports.ReplyPackets = Packets.extends({
   }
 });
 
-var Store = exports.Store = stacks.FunctionStore.extends({
-  register: function(){ return this.add.apply(this,arguments); },
-  unregister: function(){ return this.remove.apply(this,arguments); },
-});
+var Store = exports.Store = stacks.Store;
 
 var SelectedChannel = exports.SelectedChannel = stacks.FilteredChannel.extends({
   init: function(id,picker,fx){
