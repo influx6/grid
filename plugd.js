@@ -327,20 +327,19 @@ var ChannelStore = exports.ChannelStore = stacks.Configurable.extends({
 });
 
 var Plug = exports.Plug = stacks.Configurable.extends({
-  init: function(mapper,fn){
+  init: function(id,conf,fn){
+    stacks.Asserted(stacks.valids.String(id),'first argument be a stringed "id" for the plug');
     this.$super();
-    if(stacks.valids.isString(mapper)){
-      this.config({id: mapper, filter: mapper});
-    }else{
-      stacks.Asserted(stacks.valids.isObject(mapper),"first arg must be a map with 'id'"
-      +" eg {id:..,filter: ..}");
-      stacks.Asserted(stacks.valids.contains(mapper,'filter') || stacks.valids.contains(mapper,'id')," the map must contain either an id or filter key attribute");
-    }
+
+
+    if(stacks.valids.String(conf)) conf = { filter: conf };
+    this.config(conf);
+
 
     var self = this,bindings = [],network,plate;
     var filter = this.getConfigAttr('filter');
 
-    this.id = this.getConfigAttr('id');
+    this.id = id
     this.gid = this.getConfigAttr('gid') || this.id;
 
     this.idProxy = stacks.Proxy(this.$bind(function(d,n,e){
@@ -375,6 +374,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       self.emitPacket(this);
     });
 
+    this.store = this.$bind(function(){ return this.channelStore; });
     this.isAttached = this.$closure(function(){
       return plate != null;
     });
@@ -592,8 +592,19 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     this.configs.add('id',id);
 
     this.points = Store.make('points',stacks.funcs.identity);
-    this.proxy = stacks.Proxy(function(){ return true; });
+
+    this.proxy = stacks.Proxy(function(){
+      return true;
+    });
+
+    this.proxyBlock = stacks.Proxy(this.$bind(function(p,next,end){
+      if(!Packets.isPacket(p)) return;
+      if(p.locked() && p.plate() !== this) return;
+      return next();
+    }));
+
     this.channel = SelectedChannel.make(this.proxy.proxy);
+    this.channel.mutate(this.proxyBlock.proxy);
 
     this.bindIn = stacks.funcs.bind(this.channel.bindIn,this.channel);
     this.bindOut = stacks.funcs.bind(this.channel.bindOut,this.channel);
@@ -915,9 +926,9 @@ var PlatePoint = exports.PlatePoint = function(fx,filter,picker){
 
 var PlugStore = exports.PlugStore = Store.extends({
   init: function(id){
-    this.$super(id,function(fn,sid,fx){
+    this.$super(id,function(fn){
       var rest = stacks.enums.rest(arguments);
-      var plug = Plug.make.apply(Plug,rest);
+      var plug = Plug.make.apply(Plug,[fn.sid].concat(rest));
       fn.call(plug);
       return plug;
     });
