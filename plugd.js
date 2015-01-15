@@ -71,12 +71,14 @@ var TaskPackets = exports.TaskPackets = Packets.extends({
     if(!Packets.isReply(p)){ return;}
     var pp = TaskPackets.make(m || p.message,b || p.body,u || p.uuid);
     pp.Meta = { m: p.message, b: p.body };
+    if(p.Meta) pp.Meta.Meta = p.Meta;
     return pp;
   },
   clone: function(p,m,b,u){
     if(!Packets.isTask(p)){ return; }
     var tc = TaskPackets.make(m,b || p.body,u || p.uuid);
     tc.Meta = { m: p.message, b: p.body };
+    if(p.Meta) tc.Meta.Meta = p.Meta;
     p.link(tc);
     return tc;
   },
@@ -111,12 +113,14 @@ var ReplyPackets = exports.ReplyPackets = Packets.extends({
     if(!Packets.isTask(p)){ return;}
     var pp = ReplyPackets.make(m || p.uuid,b || p.body,u);
     pp.Meta = { m: p.message, b: p.body };
+    if(p.Meta) pp.Meta.Meta = p.Meta;
     return pp;
   },
   clone: function(p,m,b,u){
     if(!Packets.isReply(p)){ return; }
     var tc = ReplyPackets.make(m,b || p.body,u || p.uuid);
     tc.Meta = { m: p.message , b: p.body};
+    if(p.Meta) tc.Meta.Meta = p.Meta;
     p.link(tc);
     return tc;
   },
@@ -225,7 +229,6 @@ var TaskChannel = exports.TaskChannel = SelectedChannel.extends({
         return next();
       });
     });
-
     // this.enableLocking();
   },
 });
@@ -288,7 +291,7 @@ var ChannelStore = exports.ChannelStore = stacks.Configurable.extends({
     },fcc)
   },
   tweakTasks: function(fc,fcc){
-    return this.replyStore.each(function(e,i,o,fx){
+    return this.taskStore.each(function(e,i,o,fx){
       if(stacks.valids.Function(fc)) fc.call(e,e,i);
       fx(null);
     },fcc)
@@ -309,17 +312,17 @@ var ChannelStore = exports.ChannelStore = stacks.Configurable.extends({
     var t = this.reply(id);
     if(t) t.resume();
   },
-  resumeAllTasks: function(){
-    this.tweakTasks(function resumer(f){ f.resume(); });
+  resumeAllTasks: function(fx){
+    this.tweakTasks(function resumer(f){ f.resume(); },fx);
   },
-  pauseAllTasks: function(){
-    this.tweakTasks(function pauser(f){ f.pause(); });
+  pauseAllTasks: function(fx){
+    this.tweakTasks(function pauser(f){ f.pause(); },fx);
   },
-  resumeAllReplies: function(){
-    this.tweakReplies(function resumer(f){ f.resume(); });
+  resumeAllReplies: function(fx){
+    this.tweakReplies(function resumer(f){ f.resume(); },fx);
   },
-  pauseAllReplies: function(){
-    this.tweakReplies(function pauser(f){ f.pause(); });
+  pauseAllReplies: function(fx){
+    this.tweakReplies(function pauser(f){ f.pause(); },fx);
   },
 });
 
