@@ -1277,7 +1277,7 @@ var Network = exports.Network = stacks.Configurable.extends({
     this.plugs = stacks.Storage.make();
     this.flux = NetworkFlux(this);
 
-    var plug;
+    var splug,lplug;
 
     var self = this;
     this.Reply = ReplyPackets.proxy(function(){
@@ -1287,13 +1287,22 @@ var Network = exports.Network = stacks.Configurable.extends({
       self.plate.emitPacket(this);
     });
 
-    this.$secure('transform',function(){
-      if(Plug.instanceBelongs(plug)) return plug;
-      plug = Plug.make(this.id,{ filter: stacks.funcs.always(true) });
-      plug.attachNetwork(this);
-      plug.withNetwork(plug.tasks(),plug.replies());
-      return plug;
+    this.$secure('toStrictPlug',function(){
+      if(Plug.instanceBelongs(splug)) return splug;
+      splug = Plug.make(this.id,{ filter: stacks.funcs.always(true) });
+      splug.attachNetwork(this);
+      splug.withNetwork(splug.tasks(),splug.replies());
+      return splug;
     });
+
+    this.$secure('toLeakPlug',function(){
+      if(Plug.instanceBelongs(lplug)) return lplug;
+      lplug = Plug.make(this.id);
+      lplug.attachNetwork(this);
+      lplug.leakNetwork();
+      return lplug;
+    });
+
     this.$secure('imprint',function(net){
       if(!Network.isType(net)) return;
       return fn.call(net);
