@@ -70,15 +70,20 @@ var TaskPackets = exports.TaskPackets = Packets.extends({
   from: function(p,m,b,u){
     if(!Packets.isReply(p)){ return;}
     var pp = TaskPackets.make(m || p.message,b || p.body,u || p.uuid);
-    pp.Meta = { m: p.message, b: p.body };
+    var puid = (p.body.puid || (p.Meta && p.Meta.b ? p.Meta.b.puid : null));
+    pp.Meta = { m: p.message, b: p.body, puid: puid  };
     if(p.Meta) pp.Meta.Meta = p.Meta;
+    pp.config(p.peekConfig());
+    // p.link(pp);
     return pp;
   },
   clone: function(p,m,b,u){
     if(!Packets.isTask(p)){ return; }
     var tc = TaskPackets.make(m,b || p.body,u || p.uuid);
-    tc.Meta = { m: p.message, b: p.body };
+    var puid = (p.body.puid || (p.Meta && p.Meta.b ? p.Meta.b.puid : null));
+    tc.Meta = { m: p.message, b: p.body, puid: puid };
     if(p.Meta) tc.Meta.Meta = p.Meta;
+    tc.config(p.peekConfig());
     p.link(tc);
     return tc;
   },
@@ -112,15 +117,19 @@ var ReplyPackets = exports.ReplyPackets = Packets.extends({
   from: function(p,b,u,m){
     if(!Packets.isTask(p)){ return;}
     var pp = ReplyPackets.make(m || p.uuid,b || p.body,u);
-    pp.Meta = { m: p.message, b: p.body };
+    var puid = (p.body.puid || (p.Meta && p.Meta.b ? p.Meta.b.puid : null));
+    pp.Meta = { m: p.message, b: p.body, puid: puid  };
     if(p.Meta) pp.Meta.Meta = p.Meta;
+    pp.config(p.peekConfig());
     return pp;
   },
   clone: function(p,m,b,u){
     if(!Packets.isReply(p)){ return; }
     var tc = ReplyPackets.make(m,b || p.body,u || p.uuid);
-    tc.Meta = { m: p.message , b: p.body};
+    var puid = (p.body.puid || (p.Meta && p.Meta.b ? p.Meta.b.puid : null));
+    tc.Meta = { m: p.message, b: p.body, puid: puid };
     if(p.Meta) tc.Meta.Meta = p.Meta;
+    tc.config(p.peekConfig());
     p.link(tc);
     return tc;
   },
@@ -331,12 +340,10 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     stacks.Asserted(stacks.valids.String(id),'first argument be a stringed "id" for the plug');
     this.$super();
 
-
     if(stacks.valids.String(conf)) conf = { filter: conf };
     this.config(conf);
 
-
-    var self = this,bindings = [],network,plate;
+    var self = this,bindings = [],network,plate,plateNetwork;
     var filter = this.getConfigAttr('filter');
 
     this.id = id
@@ -348,7 +355,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       }
       return n();
     }));
-
+    this.leaked = stacks.Switch();
     this.points = Store.make('points',stacks.funcs.identity);
     this.channelStore = ChannelStore.make(this.gid || this.id);
 
@@ -383,16 +390,17 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       return network != null;
     });
 
-    this.attachPlate = this.$closure(function(pl){
+    this.attachPlate = this.$closure(function(pl,net){
       if(this.isAttached() || !Plate.isInstance(pl)) return;
       plate = pl;
-      this.emit('attachPlate',pl);
+      plateNetwork = net;
+      this.emit('attachPlate',pl,net);
     });
 
     this.detachPlate = this.$closure(function(){
-      this.emit('detachPlate',plate);
+      this.emit('detachPlate',plate,net);
       this.destoryBindings();
-      plate = null;
+      plate = plateNetwork = null;
     });
 
     this.$secure('dispatch',function (t) {
@@ -410,10 +418,10 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.afterPlate = this.$closure(function(fn){
       if(!this.isAttached()){
         return this.afterOnce('attachPlate',this.$bind(function(f){
-            return fn.call(this,plate);
+            return fn.call(this,plate,plateNetwork);
         }));
       }
-      return (stacks.valids.isFunction(fn) ? fn.call(this,plate) : null);
+      return (stacks.valids.isFunction(fn) ? fn.call(this,plate,plateNetwork) : null);
     });
 
     this.destoryBindings = this.$bind(function(){
@@ -465,6 +473,10 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     });
 
+    this.networkAttached = this.$bind(function(){
+      return network !== null;
+    });
+
     this.detachNetwork = this.$bind(function(){
       if(!this.hasNetwork()) return;
       this.tasks().unbind(network.plate.channel);
@@ -474,7 +486,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
 
     this.networkOut = this.$bind(function(chan){
       if(!SelectedChannel.isType(chan)) return;
-
       this.afterOnce('networkAttached',function(net){
         if(network){
           network.bindOut(chan);
@@ -511,6 +522,48 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       if(stacks.valids.Function(fx)) fx.call(network);
       return network;
     });
+
+    this.leakNetworkOp = this.$bind(function(fn,fnx){
+      return this.afterPlate(function(){
+        this.afterOnce('networkAttached',this.$bind(function(){
+          return (stacks.valids.Function(fn) ? fn.call(this) : null);
+        }));
+        this.afterOnce('networkDetached',this.$bind(function(){
+          return (stacks.valids.Function(fnx) ? fnx.call(this) : null);
+        }));
+      });
+    });
+
+    this.leakNetwork = this.$bind(function(){
+      this.leakNetworkTo(plateNetwork);
+    });
+
+    this.unleakNetwork = this.$bind(function(){
+      this.unleakNetworkTo(plateNetwork);
+    });
+
+    this.isLeaked = this.$bind(function(){
+      return this.leaked.isOn();
+    });
+
+    this.leakNetworkTo = this.$bind(function(net){
+      if(!Network.instanceBelongs(net)) return;
+      this.leakNetworkOp(function(){
+        this.leaked.on();
+        this.exposeNetwork().flux.connect(net);
+      },function(){
+        if(this.exposeNetwork().flux().size <= 0) this.leaked.off();
+        this.exposeNetwork().flux.disconnect(net);
+      });
+    });
+
+    this.unleakNetworkTo = this.$bind(function(net){
+      if(!Network.instanceBelongs(net)) return;
+      this.leakNetworkOp(function(){
+        this.exposeNetwork().flux.disconnect(net);
+      });
+    });
+
 
     //instance variables
     this.channel = this.newTask('core',filter || this.id);
@@ -696,7 +749,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     return new PlugQueue(this);
   },
   watch: function(uuid,mp){
-    var channel = new channels.SelectedChannel(uuid,mp);
+    var channel = SelectedChannel.make(uuid,mp);
     this.channel.subscriber = this.channel.stream(channel);
     return channel;
   },
@@ -1222,6 +1275,9 @@ var Network = exports.Network = stacks.Configurable.extends({
     this.rs = rs;
     this.plate = Plate.make(id);
     this.plugs = stacks.Storage.make();
+    this.flux = NetworkFlux(this);
+
+    var plug;
 
     var self = this;
     this.Reply = ReplyPackets.proxy(function(){
@@ -1231,6 +1287,13 @@ var Network = exports.Network = stacks.Configurable.extends({
       self.plate.emitPacket(this);
     });
 
+    this.$secure('transform',function(){
+      if(Plug.instanceBelongs(plug)) return plug;
+      plug = Plug.make(this.id,{ filter: stacks.funcs.always(true) });
+      plug.attachNetwork(this);
+      plug.withNetwork(plug.tasks(),plug.replies());
+      return plug;
+    });
     this.$secure('imprint',function(net){
       if(!Network.isType(net)) return;
       return fn.call(net);
@@ -1244,7 +1307,7 @@ var Network = exports.Network = stacks.Configurable.extends({
     if(!this.plugs.has(gid || plug.GUUID)){
       this.plugs.add(gid || plug.GUUID,plug);
       plug.gid = gid;
-      plug.attachPlate(this.plate);
+      plug.attachPlate(this.plate,this);
     }
     return this;
   },
@@ -1280,7 +1343,7 @@ var Network = exports.Network = stacks.Configurable.extends({
 
 var NetworkFlux = exports.NetworkFlux = function(net){
  stacks.Asserted(Network.isInstance(net),'argument must be an instance of plug.Network');
-  return stacks.Mask(function(fx){
+ return stacks.Mask(function(fx){
 
     var pl = net.plate,channel = pl.channel, nets = [],markers = {};
 
@@ -1292,6 +1355,10 @@ var NetworkFlux = exports.NetworkFlux = function(net){
     });
 
     this.secureLock('filterPackets',filterGenerator(net));
+
+    this.unsecure('size',function(net){
+      return nets.length;
+    });
 
     this.secure('has',function(net){
       return nets.indexOf(net) !== -1;
@@ -1319,3 +1386,32 @@ var NetworkFlux = exports.NetworkFlux = function(net){
 
   });
 };
+
+// var NetworkManager = exports.NetworkManager = stacks.Configurable.extends({
+//   init: function(id){
+//     this.$super();
+//     this.config({id: id});
+//     this.id = id;
+//     this.central = Network.make('centeral:hub');
+//     this.flux = NetworkFlux(this.central);
+//     this.networks = stacks.Storage.make('network');
+//   },
+//   has: function(id){
+//     return this.networks.has(id);
+//   },
+//   get: function(id){
+//     return this.networks.get(id);
+//   },
+//   use: function(net,id){
+//     stacks.Asserted(Networks.instanceBelongs(net),'first arg must be a network instance');
+//     stacks.Asserted(stacks.valids.String(id),'second arg must be a string as key');
+//     if(this.has(id)) return;
+//     this.networks.add(id,net);
+//     this.flux.connect(net);
+//   },
+//   unuse: function(id){
+//     if(!this.has(id)) return;
+//     var net = this.network.remove(id);
+//     this.flux.disconnect(net);
+//   }
+// });

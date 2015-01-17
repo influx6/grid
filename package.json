@@ -1,7 +1,7 @@
 {
   "name": "plugd",
-  "version": "0.0.12",
-  "description": "flux pattern based framework on the mbp-fbp derivative",
+  "version": "0.1.0",
+  "description": "flux pattern based framework with a twist (a task and message passing based flux)",
   "main": "./plugd.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -9,7 +9,7 @@
   "dependencies":{
     "stackq":"0.x.x"
   },
-  "keywords": ["mbp","message based programming"],
+  "keywords": ["mbp","message based programming","tbp","task based programming"],
   "repository": {
     "type": "git",
     "url": "http://github.com/influx6/plug"
