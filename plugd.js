@@ -761,7 +761,7 @@ var Plate = exports.Plate = stacks.Configurable.extends({
     if(!Packets.isTask(t)) return;
     var mw = this.watch(t.uuid);
     mw.task = t;
-    this.emit(t);
+    this.emitPacket(t);
     return mw;
   },
 });
