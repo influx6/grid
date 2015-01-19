@@ -1,50 +1,31 @@
-var stacks = require('stackq');
-var plug = require('../plugd.js');
-var expects = stacks.Expects;
+var _ = require('stackq');
+var grid = require('../grid.js');
 
-stacks.Jazz('network specification', function (_){
+_.Jazz('plug specification', function (r){
 
-  var n = plug.Network.make('sink');
-  var p = plug.Network.make('suck');
-
-  var flux = plug.NetworkFlux(n);
-  flux.connect(p);
-
-  _('can i create a flux for two networks',function(k){
-    k.sync(function(d,g){
-      stacks.Expects.isFunction(d.connect);
-      stacks.Expects.isFunction(d.disconnect);
-      stacks.Expects.isString(d.GUUID);
-    });
-  }).use(flux);
-
-  p.tasks().on(function(f){
-    _('can i send packets from n to p',function(k){
-      k.async(function(d,n,g){
-        n();
-        stacks.Expects.truthy(plug.Packets.isPacket(d));
-        stacks.Expects.isObject(d.body);
-        stacks.Expects.isString(f.body.name);
-      });
-    }).use(f);
+  var consoler = grid.Plug.make('consoler',{},function consolerInit(){
+    this.in().on(this.$bind(function(p){
+      p.stream().on(_.funcs.restrictArgs(console.log,1));
+    }));
   });
 
-  n.tasks().on(function(f){
-    _('can i send packets from p to n',function(k){
-      k.async(function(d,n,g){
-        n();
-        stacks.Expects.truthy(plug.Packets.isPacket(d));
-        stacks.Expects.isObject(d.body);
-        stacks.Expects.isString(f.body.name);
-      });
-    }).use(f);
+  var feeder = grid.Plug.make('feed',{},function feedInit(){
+    this.in().on(this.$bind(function(p){
+      this.out().emit(p);
+    }));
   });
 
-  n.Task.make('woo',{name:'sink'});
-  p.Task.make('waa',{name:'suck'});
-  flux.disconnect(p);
-  n.Task.make('woo',{name:'rock'});
-  p.Task.make('waa',{name:'not'});
+  var consoler2 = grid.Plug.make('consoler2',{},function consolerInit(){
+    this.in().on(this.$bind(function(p){
+      p.stream().on(function(f){
+        console.log('2:>',f);
+      });
+    }));
+  });
+
+  feeder.a(consoler).a(consoler2);
+
+  feeder.in().Packets.make({ name:'alex'}).emit('winder');
 
 
 });

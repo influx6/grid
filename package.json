@@ -1,18 +1,18 @@
 {
-  "name": "plugd",
-  "version": "0.1.0",
-  "description": "flux pattern based framework with a twist (a task and message passing based flux)",
-  "main": "./plugd.js",
+  "name": "grid",
+  "version": "0.0.1",
+  "description": "reactive function code block grid",
+  "main": "./grid.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies":{
     "stackq":"0.x.x"
   },
-  "keywords": ["mbp","message based programming","tbp","task based programming"],
+  "keywords": ["grid","reactive programming","functional","reactive functional programming"],
   "repository": {
     "type": "git",
-    "url": "http://github.com/influx6/plug"
+    "url": "http://github.com/influx6/grid"
   },
   "author": "Alexander Ewetumo",
   "license": "mit"
