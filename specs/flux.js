@@ -3,6 +3,9 @@ var grid = require('../grid.js');
 
 _.Jazz('plug specification', function (r){
 
+  var net = grid.Network.make('classO');
+  console.log(net);
+
   var consoler = grid.Plug.make('consoler',{},function consolerInit(){
     this.in().on(this.$bind(function(p){
       p.stream().on(_.funcs.restrictArgs(console.log,1));
@@ -26,6 +29,8 @@ _.Jazz('plug specification', function (r){
   feeder.a(consoler).a(consoler2);
 
   feeder.in().Packets.make({ name:'alex'}).emit('winder');
+  feeder.in().Packets.make({ name:'alex', $filter: 'consoler2'}).emit('wonder');
+  feeder.in().Packets.make({ name:'alex', $filter: 'consoler'}).emit('i dont really want console2');
 
 
 });
