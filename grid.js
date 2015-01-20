@@ -75,7 +75,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       if(!Network.instanceBelongs(net) || this.hasNetwork()) return;
       network = net;
       this.emit('networkAttached',net);
-      this.withNetwork(this.tasks(),this.replies());
     });
 
     this.hasNetwork = this.$bind(function(){
