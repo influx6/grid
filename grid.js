@@ -5,8 +5,9 @@ var stacks = require("stackq");
 var Store = exports.Store = stacks.Store;
 
 var Plug = exports.Plug = stacks.Configurable.extends({
-  init: function(id,conf,fn){
-    stacks.Asserted(stacks.valids.String(id),'first argument be a stringed "id" for the plug');
+  init: function(conf,id,fn){
+    stacks.Asserted(stacks.valids.Object(conf),'first argument must be a map of properties');
+    stacks.Asserted(stacks.valids.String(id),'second argument must be a stringed "id" for the plug');
     this.$super();
     var self = this,network;
 
@@ -28,13 +29,15 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       }
       return n();
     }));
-
     this.channelStore = stacks.ChannelStore.make(this.id);
-    this.bindings = stacks.Storage.make('bindings');
-
     this.makeName = this.$bind(function(sn){
       if(stacks.valids.not.String(sn)){ return; }
       return [this.id,sn].join('.');
+    });
+    this.imprint = this.$bind(function(plug){
+      if(!Plug.instanceBelongs(plug)) return;
+      if(stacks.valids.Function(fn)) fn.call(plug);
+      return plug;
     });
 
     this.pub('boot');
@@ -59,7 +62,6 @@ var Plug = exports.Plug = stacks.Configurable.extends({
           });
       }));
     });
-
     this.newOut = this.$bind(function(id,tag,picker){
       return this.channelStore.newOut((id),tag || "*",picker)(this.$bind(function(tk){
           tk.mutate(this.packetBlock.proxy);
@@ -185,6 +187,26 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     this.emit('close',this);
     this.detachAll();
   },
+  },{
+    blueprint: function(id,fx){
+      stacks.Asserted(stacks.valids.String(id),'first argument must be a stringed');
+      stacks.Asserted(stacks.valids.Function(fx),'second argument must be a function');
+      var print =  stacks.funcs.curry(Plug.make,id,fx);
+      print.id = id;
+      print.imprint = stacks.funcs.bind(function(plug){
+        if(!Plug.instanceBelongs(plug)) return;
+        var res = fx.call(plug);
+        return stacks.valids.exists(res) ? res : plug;
+      },print);
+      print.blueprint = stacks.funcs.bind(function(id,fn){
+        stacks.Asserted(stacks.valids.String(id),'first argument be a stringed "id" for the plug');
+        return Plug.blueprint(id,function(){
+          if(stacks.valids.Function(fx)) fx.call(this);
+          if(stacks.valids.Function(fn)) fn.call(this);
+        });
+      });
+      return print;
+    },
 }).muxin({
   a: function(plug,chan,xchan){
     if(!Plug.instanceBelongs(plug)) return;
@@ -374,14 +396,14 @@ var Rack = exports.Rack = stacks.Configurable.extends({
 });
 
 var Network = exports.Network = stacks.Configurable.extends({
-    init: function(id,rs,fn){
+    init: function(id,conf,fn){
       stacks.Asserted(stacks.valids.isString(id),'a string must be supplied as network id');
-      if(stacks.valids.exists(rs) && stacks.valids.not.Function(rs)){
-        stacks.Asserted(RackSpace.isInstance(rs),'if you must supply a non function as second please supply a rackspace instance');
-      }
+      stacks.Asserted(stacks.valids.Object(conf),'second argument be a map of properties');
       this.$super();
+      this.config(conf);
       this.id = id;
-      this.rs = rs;
+      this.channelStore = stacks.ChannelStore.make(this.id);
+      this.rs = RackSpace.make(this.id);
       this.plugs = stacks.Storage.make();
       this.makeName = this.$bind(function(sn){
         if(stacks.valids.not.String(sn)){ return; }
@@ -393,11 +415,9 @@ var Network = exports.Network = stacks.Configurable.extends({
         }
         return n();
       }));
-
-      this.channelStore = stacks.ChannelStore.make(this.id);
       this.store = this.$bind(function(){ return this.channelStore; });
-      var plug;
-      var self = this;
+
+      var plug,self = this;
 
       this.pub('detachAll');
       this.pub('detachAllIn');
@@ -444,7 +464,7 @@ var Network = exports.Network = stacks.Configurable.extends({
 
       this.channelStore.hookBinderProxy(this);
 
-      this.$dot(rs || fn);
+      this.$dot(fn);
     },
     use: function(plug,gid){
       stacks.Asserted(Plug.instanceBelongs(plug),'first argument is required to be a plug instance');
