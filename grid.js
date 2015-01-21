@@ -2,9 +2,7 @@
 
 var stacks = require("stackq");
 
-var Store = exports.Store = stacks.Store;
-
-var Plug = exports.Plug = stacks.Configurable.extends({
+var Print = exports.Print = stacks.Configurable.extends({
   init: function(conf,id,fn){
     stacks.Asserted(stacks.valids.Object(conf),'first argument must be a map of properties');
     stacks.Asserted(stacks.valids.String(id),'second argument must be a stringed "id" for the plug');
@@ -35,14 +33,14 @@ var Plug = exports.Plug = stacks.Configurable.extends({
       return [this.id,sn].join('.');
     });
     this.imprint = this.$bind(function(plug){
-      if(!Plug.instanceBelongs(plug)) return;
+      if(!Print.instanceBelongs(plug)) return;
       if(stacks.valids.Function(fn)) fn.call(plug);
       return plug;
     });
 
     this.pub('boot');
-    this.pub('attachPlug');
-    this.pub('detachPlug');
+    this.pub('attachPrint');
+    this.pub('detachPrint');
     this.pub('detachAll');
     this.pub('detachAllIn');
     this.pub('detachAllOut');
@@ -191,16 +189,16 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     blueprint: function(id,fx){
       stacks.Asserted(stacks.valids.String(id),'first argument must be a stringed');
       stacks.Asserted(stacks.valids.Function(fx),'second argument must be a function');
-      var print =  stacks.funcs.curry(Plug.make,id,fx);
+      var print =  stacks.funcs.curry(Print.make,id,fx);
       print.id = id;
       print.imprint = stacks.funcs.bind(function(plug){
-        if(!Plug.instanceBelongs(plug)) return;
+        if(!Print.instanceBelongs(plug)) return;
         var res = fx.call(plug);
         return stacks.valids.exists(res) ? res : plug;
       },print);
       print.blueprint = stacks.funcs.bind(function(id,fn){
         stacks.Asserted(stacks.valids.String(id),'first argument be a stringed "id" for the plug');
-        return Plug.blueprint(id,function(){
+        return Print.blueprint(id,function(){
           if(stacks.valids.Function(fx)) fx.call(this);
           if(stacks.valids.Function(fn)) fn.call(this);
         });
@@ -209,7 +207,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     },
 }).muxin({
   a: function(plug,chan,xchan){
-    if(!Plug.instanceBelongs(plug)) return;
+    if(!Print.instanceBelongs(plug)) return;
     if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
     if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
     var cc = plug.in(chan);
@@ -218,7 +216,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
     // return plug;
   },
   d: function(plug,chan,xchan){
-    if(!Plug.instanceBelongs(plug)) return;
+    if(!Print.instanceBelongs(plug)) return;
     if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
     if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
     var cc = plug.in(chan);
@@ -227,173 +225,7 @@ var Plug = exports.Plug = stacks.Configurable.extends({
   },
 });
 
-var PlugStore = exports.PlugStore = Store.extends({
-  init: function(id){
-    this.$super(id,function(fn){
-      var rest = stacks.enums.rest(arguments);
-      var plug = Plug.make.apply(Plug,[fn.sid].concat(rest));
-      fn.call(plug);
-      return plug;
-    });
-  }
-});
-
-var RackSpace = exports.RackSpace = stacks.Configurable.extends({
-  init: function(id){
-    stacks.Asserted(stacks.valids.isString(id),'an "id" of string type is required ');
-    this.$super();
-    this.id = id;
-    this.racks = stacks.Storage.make('rackspace');
-  },
-  has: function(ns){
-    return this.racks.has(ns);
-  },
-  ns: function(ns){
-    if(!this.has(ns)) return;
-    return this.racks.get(ns);
-  },
-  new: function(id){
-    stacks.Asserted(stacks.valids.isString(id),'first args must be a string');
-    if(this.has(id)) return this.ns(id);
-    return this.racks.add(id,Rack.make(id));
-  },
-  rack: function(rack){
-    stacks.Asserted(Rack.isInstance(rack),'first args must be a Rack instance');
-    if(this.racks.has(rack.id)) return;
-    return this.racks.add(rack.id,rack);
-  },
-  unrack: function(rack){
-    if(Rack.isInstance(rack)){
-      return this.racks.remove(rack.id)
-    }
-    if(stack.valids.isString(rack)){
-      return this.racks.remove(id);
-    }
-    return;
-  },
-  resource: function(addr){
-    stacks.Asserted(stacks.valids.isString(addr),'first argument must be a string with format: {rack}/{type}/{id}');
-    var rest = stacks.enums.rest(arguments);
-
-    var paths = addr.split('/');
-    stacks.Asserted(paths.length >= 3,'address for type and id is incorrect {rack}/{type}/id!');
-
-    var tr = stacks.enums.rest(paths), rack = paths[0];
-    stacks.Asserted(tr.length >= 2,'sub-address for type and id is incorrect {type}/{id}!');
-
-    if(!this.has(rack)) return;
-
-    var r = this.ns(rack), cr = r.resource.apply(r,tr.concat(rest));
-    if(cr) cr.track = rest;
-    return cr;
-  },
-  getResource: function(addr){
-    stacks.Asserted(stacks.valids.isString(addr),'first argument must be a string with format: {rack}/{type}/{id}');
-    var rest = stacks.enums.rest(arguments);
-
-    var paths = addr.split('/');
-    stacks.Asserted(paths.length >= 3,'address for type and id is incorrect {rack}/{type}/id!');
-
-    var tr = stacks.enums.rest(paths), rack = paths[0];
-    stacks.Asserted(tr.length >= 2,'sub-address for type and id is incorrect {type}/{id}!');
-
-    if(!this.has(rack)) return;
-
-    var r = this.ns(rack), cr = r.getResource.apply(r,tr.concat(rest));
-    if(cr) cr.track = rest;
-    return cr;
-  }
-});
-
-var Rack = exports.Rack = stacks.Configurable.extends({
-  init: function(id){
-    stacks.Asserted(stacks.valids.isString(id),'an "id" of string type is required ');
-    this.$super();
-    this.id = id;
-    this.mutators = core.ChannelMutatorStore.make("MutatorStore");
-    this.adapters = core.AdapterStore.make("plugs");
-    this.plugs = PlugStore.make("plugs");
-  },
-  resource: function(){
-    var res,
-        type = stacks.enums.first(arguments),
-        name = stacks.enums.second(arguments),
-        rest = stacks.enums.nthRest(arguments,2);
-
-    var args = [name].concat(rest);
-    switch(type){
-      case 'adapters':
-        res = this.Adapter.apply(this,args);
-        break;
-      case 'plugs':
-        res = this.Plug.apply(this,args);
-        break;
-      case 'mutator':
-        res = this.Mutator.apply(this,args);
-        break;
-    }
-
-    return res;
-  },
-  getResource: function(){
-    var res,
-        type = stacks.enums.first(arguments),
-        name = stacks.enums.second(arguments),
-        rest = stacks.enums.nthRest(arguments,2);
-
-    var args = [name].concat(rest);
-
-    switch(type){
-      case 'adapters':
-        res = this.getAdapter.apply(this,args);
-        break;
-      case 'plugs':
-        res = this.getPlug.apply(this,args);
-        break;
-      case 'mutator':
-        res = this.getMutator.apply(this,args);
-        break;
-    }
-
-    return res;
-  },
-  hasPlug: function(id){
-    return this.plugs.has(id);
-  },
-  hasMutator: function(id){
-    return this.mutators.has(id);
-  },
-  hasAdapter: function(id){
-    return this.adapters.has(id);
-  },
-  Plug: function(id){
-    return this.plugs.Q.apply(this.plugs,arguments);
-  },
-  Adapter: function(id){
-    return this.adapters.Q.apply(this.plugs,arguments);
-  },
-  Mutator: function(id){
-    return this.mutators.Q.apply(this.mutators,arguments);
-  },
-  getPlug: function(id){
-    return this.plugs.get.apply(this.plugs,arguments);
-  },
-  getAdapter: function(id){
-    return this.adapters.get.apply(this.plugs,arguments);
-  },
-  getMutator: function(id){
-    return this.mutators.get.apply(this.mutators,arguments);
-  },
-  registerPlug: function(){
-    return this.plugs.register.apply(this.plugs,arguments);
-  },
-  registerAdapter: function(){
-    return this.adapters.register.apply(this.adapters,arguments);
-  },
-  registerMutator: function(id,fn){
-    return this.mutators.register(id,Mutators(fn));
-  },
-});
+var Blueprint = exports.Blueprint = stacks.funcs.bind(Print.blueprint,Print);
 
 var Network = exports.Network = stacks.Configurable.extends({
     init: function(id,conf,fn){
@@ -403,7 +235,6 @@ var Network = exports.Network = stacks.Configurable.extends({
       this.config(conf);
       this.id = id;
       this.channelStore = stacks.ChannelStore.make(this.id);
-      this.rs = RackSpace.make(this.id);
       this.plugs = stacks.Storage.make();
       this.makeName = this.$bind(function(sn){
         if(stacks.valids.not.String(sn)){ return; }
@@ -445,9 +276,9 @@ var Network = exports.Network = stacks.Configurable.extends({
         }));
       });
 
-      this.$secure('toPlug',function(){
-        if(Plug.instanceBelongs(plug)) return splug;
-        plug = Plug.make(this.id,{ id: this.id });
+      this.$secure('toPrint',function(){
+        if(Print.instanceBelongs(plug)) return splug;
+        plug = Print.make(this.id,{ id: this.id });
         plug.attachNetwork(this);
         plug.withNetwork(this.in(),this.out());
         return plug;
@@ -467,7 +298,7 @@ var Network = exports.Network = stacks.Configurable.extends({
       this.$dot(fn);
     },
     use: function(plug,gid){
-      stacks.Asserted(Plug.instanceBelongs(plug),'first argument is required to be a plug instance');
+      stacks.Asserted(Print.instanceBelongs(plug),'first argument is required to be a plug instance');
       if(!this.plugs.has(gid || plug.GUUID)){
         this.plugs.add(gid || plug.GUUID,plug);
         plug.gid = gid;
@@ -478,18 +309,18 @@ var Network = exports.Network = stacks.Configurable.extends({
       stacks.Asserted(stacks.valids.isString(gid),'argument is the unique alias for this plug');
       return this.plugs.Q(gid);
     },
-    removePlug: function(gid){
+    removePrint: function(gid){
       if(!this.has(gid)) return;
       var pl = this.get(gid);
       pl.release();
       return pl;
     },
-    destroyPlug: function(gid){
+    destroyPrint: function(gid){
       var f = this.remove(gid);
       if(f) f.close();
       return f;
     },
-    hasPlug: function(id){
+    hasPrint: function(id){
       return this.plugs.has(id);
     },
     in: function(f){

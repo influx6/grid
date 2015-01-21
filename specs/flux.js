@@ -1,9 +1,9 @@
 var _ = require('stackq');
 var grid = require('../grid.js');
 
-_.Jazz('grid.Plug specification', function (r){
+_.Jazz('grid.Blueprint specification', function (r){
 
-  var fossil = grid.Plug.blueprint('fossil',function(){
+  var fossil = grid.Blueprint('fossil',function(){
     this.in().on(this.$bind(function(p){
       this.out().emit(p);
     }));
@@ -38,7 +38,7 @@ _.Jazz('grid.Plug specification', function (r){
 
   r('can i create a rat fossil',function(s){
     s.sync(function(d,g){
-      _.Expects.truthy(grid.Plug.instanceBelongs(d));
+      _.Expects.truthy(grid.Print.instanceBelongs(d));
     });
   }).use(ratfossil({'name':'monster'}));
 
