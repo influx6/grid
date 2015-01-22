@@ -132,7 +132,7 @@ var Print = exports.Print = stacks.Configurable.extends({
     this.newOut('out');
     this.newOut('err');
 
-    this.ignoreFilter.off();
+    this.disableFiltering();
     this.channelStore.hookBinderProxy(this);
 
     this.$dot(fn);
@@ -186,19 +186,19 @@ var Print = exports.Print = stacks.Configurable.extends({
     this.detachAll();
   },
   },{
-    blueprint: function(id,fx){
+    Blueprint: function(id,fx){
       stacks.Asserted(stacks.valids.String(id),'first argument must be a stringed');
       stacks.Asserted(stacks.valids.Function(fx),'second argument must be a function');
       var print =  stacks.funcs.curry(Print.make,id,fx);
       print.id = id;
-      print.imprint = stacks.funcs.bind(function(plug){
+      print.Imprint = stacks.funcs.bind(function(plug){
         if(!Print.instanceBelongs(plug)) return;
         var res = fx.call(plug);
         return stacks.valids.exists(res) ? res : plug;
       },print);
-      print.blueprint = stacks.funcs.bind(function(id,fn){
+      print.Blueprint = stacks.funcs.bind(function(id,fn){
         stacks.Asserted(stacks.valids.String(id),'first argument be a stringed "id" for the plug');
-        return Print.blueprint(id,function(){
+        return Print.Blueprint(id,function(){
           if(stacks.valids.Function(fx)) fx.call(this);
           if(stacks.valids.Function(fn)) fn.call(this);
         });
@@ -206,26 +206,61 @@ var Print = exports.Print = stacks.Configurable.extends({
       return print;
     },
 }).muxin({
+  ai: function(plug,chan,xchan){
+    if(!Print.instanceBelongs(plug)) return;
+    if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.in(xchan);
+    var cc = plug.in(chan);
+    xc.bindOut(cc);
+  },
+  di: function(plug,chan,xchan){
+    if(!Print.instanceBelongs(plug)) return;
+    if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.in(xchan);
+    var cc = plug.in(chan);
+    xc.unbind(cc);
+  },
+  ao: function(plug,chan,xchan){
+    if(!Print.instanceBelongs(plug)) return;
+    if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.out(xchan);
+    var cc = plug.out(chan);
+    xc.bindOut(cc);
+  },
+  do: function(plug,chan,xchan){
+    if(!Print.instanceBelongs(plug)) return;
+    if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.out(xchan);
+    var cc = plug.out(chan);
+    xc.unbind(cc);
+  },
   a: function(plug,chan,xchan){
     if(!Print.instanceBelongs(plug)) return;
     if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
     if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
-    var cc = plug.in(chan);
     var xc = this.out(xchan);
+    var cc = plug.in(chan);
     xc.bindOut(cc);
-    // return plug;
   },
   d: function(plug,chan,xchan){
     if(!Print.instanceBelongs(plug)) return;
     if(stacks.valids.String(chan) && !plug.store().hasIn(chan)) return;
     if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
-    var cc = plug.in(chan);
     var xc = this.out(xchan);
+    var cc = plug.in(chan);
     xc.unbind(cc);
   },
 });
 
-var Blueprint = exports.Blueprint = stacks.funcs.bind(Print.blueprint,Print);
+var Blueprint = exports.Blueprint = stacks.funcs.bind(Print.Blueprint,Print);
+
+var Atomic = exports.Atomic = Blueprint('Atomic',function(){
+  this.enableFiltering();
+});
 
 var Network = exports.Network = stacks.Configurable.extends({
     init: function(id,conf,fn){
@@ -365,13 +400,23 @@ var Network = exports.Network = stacks.Configurable.extends({
       this.emit('detachAllOut');
     },
   },{
-    blueprint: function(fx,nt){
-      var print =  stacks.funcs.curry(Network.make,fx);
-      print.imprint = stacks.funcs.bind(function(net){
+    Blueprint: function(id,fx){
+      stacks.Asserted(stacks.valids.String(id),'first argument must be a stringed');
+      stacks.Asserted(stacks.valids.Function(fx),'second argument must be a function');
+      var print =  stacks.funcs.curry(Network.make,id,fx);
+      print.id = id;
+      print.Imprint = stacks.funcs.bind(function(net){
         if(!Network.instanceBelongs(net)) return;
         var res = fx.call(net);
         return stacks.valids.exists(res) ? res : net;
-      },print)
+      },print);
+      print.Blueprint = stacks.funcs.bind(function(id,fn){
+        stacks.Asserted(stacks.valids.String(id),'first argument be a stringed "id" for the plug');
+        return Print.Blueprint(id,function(){
+          if(stacks.valids.Function(fx)) fx.call(this);
+          if(stacks.valids.Function(fn)) fn.call(this);
+        });
+      });
       return print;
     },
   }).muxin({
@@ -389,6 +434,38 @@ var Network = exports.Network = stacks.Configurable.extends({
     if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
     var cc = net.in(chan);
     var xc = this.out(xchan);
+    xc.unbind(cc);
+  },
+  ai: function(net,chan,xchan){
+    if(!Print.instanceBelongs(net)) return;
+    if(stacks.valids.String(chan) && !net.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.in(xchan);
+    var cc = net.in(chan);
+    xc.bindOut(cc);
+  },
+  di: function(net,chan,xchan){
+    if(!Print.instanceBelongs(net)) return;
+    if(stacks.valids.String(chan) && !net.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.in(xchan);
+    var cc = net.in(chan);
+    xc.unbind(cc);
+  },
+  ao: function(net,chan,xchan){
+    if(!Print.instanceBelongs(net)) return;
+    if(stacks.valids.String(chan) && !net.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.out(xchan);
+    var cc = net.out(chan);
+    xc.bindOut(cc);
+  },
+  do: function(net,chan,xchan){
+    if(!Print.instanceBelongs(net)) return;
+    if(stacks.valids.String(chan) && !net.store().hasIn(chan)) return;
+    if(stacks.valids.String(xchan) && !this.hasOut(xchan)) return;
+    var xc = this.out(xchan);
+    var cc = net.out(chan);
     xc.unbind(cc);
   },
 });
