@@ -10,7 +10,7 @@ _.Jazz('grid.Blueprint specification', function (r){
   });
 
 
-  var ratfossil = fossil.blueprint('rat:fossil',function(){
+  var ratfossil = fossil.Blueprint('rat:fossil',function(){
     this.in().clearSubscribers();
     this.in().on(this.$bind(function(p){
       r('can i receive a rat fossil packet',function(s){
@@ -22,7 +22,7 @@ _.Jazz('grid.Blueprint specification', function (r){
     }));
   });
 
-  var pigratfossil = ratfossil.blueprint('pig:ratfossil',function(){
+  var pigratfossil = ratfossil.Blueprint('pig:ratfossil',function(){
     this.in().on(this.$bind(function(p){
       r('can i receive a pig rat fossil packet',function(s){
         s.sync(function(d,g){
@@ -46,8 +46,8 @@ _.Jazz('grid.Blueprint specification', function (r){
     s.sync(function(d,g){
       _.Expects.isFunction(d);
       _.Expects.isString(d.id);
-      _.Expects.isFunction(d.imprint);
-      _.Expects.isFunction(d.blueprint);
+      _.Expects.isFunction(d.Imprint);
+      _.Expects.isFunction(d.Blueprint);
     });
   }).use(fossil).use(ratfossil);
 
